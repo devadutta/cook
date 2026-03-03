@@ -1,0 +1,36 @@
+{
+  "name": "cook",
+  "version": "0.1.0",
+  "description": "Shell-native micro agent for natural language task execution",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "cook": "src/cli.ts"
+  },
+  "scripts": {
+    "dev": "bun run src/cli.ts",
+    "build": "mkdir -p dist && bun build src/cli.ts --target bun --outfile dist/cook.js",
+    "build:compile": "mkdir -p dist && bun build --compile --minify src/cli.ts --outfile dist/cook",
+    "release": "bash scripts/release.sh",
+    "share": "bun run scripts/build-session-viz.ts",
+    "share:all": "bun run scripts/build-session-viz.ts all",
+    "test": "bun test",
+    "typecheck": "bunx tsc --noEmit"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.49",
+    "@ai-sdk/gateway": "^3.0.55",
+    "@ai-sdk/google": "^3.0.33",
+    "@ai-sdk/groq": "^3.0.25",
+    "@ai-sdk/openai": "^3.0.36",
+    "ai": "^6.0.100",
+    "commander": "^14.0.3",
+    "picocolors": "^1.1.1",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/node": "^25.3.0",
+    "typescript": "^5.9.3"
+  }
+}
