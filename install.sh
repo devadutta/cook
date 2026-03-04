@@ -83,6 +83,24 @@ detect_linux_libc() {
   echo "glibc"
 }
 
+detect_linux_avx2() {
+  if command -v lscpu >/dev/null 2>&1; then
+    if LC_ALL=C lscpu 2>/dev/null | grep -qiE '(^|[[:space:]])avx2([[:space:]]|$)'; then
+      echo "yes"
+      return
+    fi
+  fi
+
+  if command -v grep >/dev/null 2>&1 && [ -r /proc/cpuinfo ]; then
+    if grep -qiE '(^flags|^Features)[[:space:]]*:.*(^|[[:space:]])avx2([[:space:]]|$)' /proc/cpuinfo; then
+      echo "yes"
+      return
+    fi
+  fi
+
+  echo "no"
+}
+
 need_cmd uname
 need_cmd chmod
 need_cmd mkdir
@@ -136,7 +154,11 @@ case "$OS:$ARCH" in
     if [ "$LIBC" = "musl" ]; then
       ASSET="${RELEASE_BINARY_NAME}-linux-x64-musl"
     else
-      ASSET="${RELEASE_BINARY_NAME}-linux-x64"
+      if [ "$(detect_linux_avx2)" = "yes" ]; then
+        ASSET="${RELEASE_BINARY_NAME}-linux-x64"
+      else
+        ASSET="${RELEASE_BINARY_NAME}-linux-x64-baseline"
+      fi
     fi
     ;;
   linux:arm64)

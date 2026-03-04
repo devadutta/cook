@@ -43,11 +43,12 @@ Build outputs in `./dist`:
 - `dist/cook.js` from `bun run build` (bundled Bun entry, requires Bun runtime)
 - `dist/cook` from `bun run build:compile` (native standalone binary for current host target)
 
-Release outputs in `./dist/release` (x64 artifacts use Bun baseline targets for broader compatibility with older Intel/Xeon-era CPUs):
+Release outputs in `./dist/release` (baseline x64 variants are included for broader compatibility with older Intel/Xeon-era CPUs):
 
 - `cook-darwin-arm64`
 - `cook-darwin-x64`
 - `cook-linux-x64`
+- `cook-linux-x64-baseline`
 - `cook-linux-x64-musl`
 - `cook-linux-arm64`
 - `cook-windows-x64.exe`
@@ -268,5 +269,5 @@ bun run release
 - Version bumping is automated by GitHub `release-please` on `main`:
   it opens a release PR that updates `package.json`; merging that PR creates the GitHub Release/tag.
 - Release artifacts are automated on GitHub Release `published` events:
-  binaries for macOS arm64, macOS x64, and Linux x64 are built and uploaded to the release.
+  binaries for macOS arm64, macOS x64, Linux x64 (AVX2 + baseline), Linux x64 musl, Linux arm64, and Windows x64 are built and uploaded to the release.
 - The release workflow validates `tag == v<package.json version>` before uploading assets.
