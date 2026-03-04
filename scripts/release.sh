@@ -15,22 +15,41 @@ mkdir -p "${OUT_DIR}"
 
 build_target() {
   local target="$1"
-  local output="$2"
+  local output_base="$2"
+  local output_path="${OUT_DIR}/${output_base}"
+  local final_output="${output_path}"
 
-  echo "Building ${output} (${target})..."
+  if [[ "${target}" == bun-windows-* ]]; then
+    final_output="${output_path}.exe"
+  fi
+
+  echo "Building $(basename "${final_output}") (${target})..."
   bun build \
     --compile \
     --minify \
     --bytecode \
     "${ENTRYPOINT}" \
     --target="${target}" \
-    --outfile="${OUT_DIR}/${output}"
-  chmod +x "${OUT_DIR}/${output}"
+    --outfile="${output_path}"
+
+  if [[ "${target}" != bun-windows-* ]]; then
+    chmod +x "${final_output}"
+  fi
 }
 
-build_target "bun-darwin-arm64" "cook-darwin-arm64"
-build_target "bun-darwin-x64" "cook-darwin-x64"
-build_target "bun-linux-x64" "cook-linux-x64"
+TARGET_MATRIX=(
+  "bun-darwin-arm64:cook-darwin-arm64"
+  "bun-darwin-x64-baseline:cook-darwin-x64"
+  "bun-linux-x64-baseline:cook-linux-x64"
+  "bun-linux-x64-musl-baseline:cook-linux-x64-musl"
+  "bun-linux-arm64:cook-linux-arm64"
+  "bun-windows-x64-baseline:cook-windows-x64"
+)
+
+for entry in "${TARGET_MATRIX[@]}"; do
+  IFS=':' read -r target output_base <<< "${entry}"
+  build_target "${target}" "${output_base}"
+done
 
 echo
 echo "Release binaries written to ${OUT_DIR}:"

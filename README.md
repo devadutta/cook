@@ -1,17 +1,22 @@
 # cook
 
-`cook` is a shell-native micro agent that runs natural-language tasks using Bun + Vercel AI SDK 6 `ToolLoopAgent`.
+`cook` is a shell-native micro agent that runs tasks you define in natural language.
+
+```plaintext
+                              oooo        
+                              `888        
+ .ooooo.   .ooooo.   .ooooo.   888  oooo  
+d88' `"Y8 d88' `88b d88' `88b  888 .8P'   
+888       888   888 888   888  888888.    
+888   .o8 888   888 888   888  888 `88b.  
+`Y8bod8P' `Y8bod8P' `Y8bod8P' o888o o888o 
+                                                                                 
+```
 
 ## Install
 
 ```bash
 curl --proto '=https' --tlsv1.2 -LsSf https://raw.githubusercontent.com/devadutta/cook/main/install.sh | sh
-```
-
-You can also host the same script on your own domain and keep the same pattern:
-
-```bash
-curl --proto '=https' --tlsv1.2 -LsSf <your-install-script-url> | sh
 ```
 
 Installer overrides:
@@ -24,7 +29,7 @@ curl --proto '=https' --tlsv1.2 -LsSf https://raw.githubusercontent.com/devadutt
 curl --proto '=https' --tlsv1.2 -LsSf https://raw.githubusercontent.com/devadutta/cook/main/install.sh | COOK_INSTALL_DIR="$HOME/bin" sh
 ```
 
-## Setup
+## Local Setup
 
 ```bash
 bun install
@@ -38,11 +43,14 @@ Build outputs in `./dist`:
 - `dist/cook.js` from `bun run build` (bundled Bun entry, requires Bun runtime)
 - `dist/cook` from `bun run build:compile` (native standalone binary for current host target)
 
-Release outputs in `./dist/release`:
+Release outputs in `./dist/release` (x64 artifacts use Bun baseline targets for broader compatibility with older Intel/Xeon-era CPUs):
 
 - `cook-darwin-arm64`
 - `cook-darwin-x64`
 - `cook-linux-x64`
+- `cook-linux-x64-musl`
+- `cook-linux-arm64`
+- `cook-windows-x64.exe`
 
 Initialize config using the binary you run:
 
