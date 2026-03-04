@@ -30,10 +30,11 @@ jobs:
       - name: Validate tag matches package version
         run: |
           set -euo pipefail
-          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+          PACKAGE_VERSION_RAW="$(node -p "require('./package.json').version")"
+          PACKAGE_VERSION="${PACKAGE_VERSION_RAW#v}"
           EXPECTED_TAG="v${PACKAGE_VERSION}"
           if [[ "${TAG_NAME}" != "${EXPECTED_TAG}" ]]; then
-            echo "Tag/version mismatch: tag=${TAG_NAME}, expected=${EXPECTED_TAG}" >&2
+            echo "Tag/version mismatch: tag=${TAG_NAME}, package.version=${PACKAGE_VERSION_RAW}, expected_tag=${EXPECTED_TAG}" >&2
             exit 1
           fi
 
