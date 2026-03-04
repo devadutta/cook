@@ -20,6 +20,7 @@ EOF
 REPO_OWNER="devadutta"
 REPO_NAME="cook"
 DEFAULT_VERSION="v0.1.0"
+RELEASE_BINARY_NAME="cook"
 
 VERSION="${COOK_VERSION:-$DEFAULT_VERSION}"
 INSTALL_DIR="${COOK_INSTALL_DIR:-$HOME/.cook/bin}"
@@ -38,6 +39,50 @@ need_cmd() {
   fi
 }
 
+print_source_build_help() {
+  echo "Please build cook from source:" >&2
+  echo "  https://github.com/$REPO_OWNER/$REPO_NAME" >&2
+  echo "Quick start:" >&2
+  echo "  1) bun install" >&2
+  echo "  2) bun run build:compile" >&2
+}
+
+unsupported_platform() {
+  platform="$1"
+  reason="${2:-}"
+
+  echo "No prebuilt binary is available for your platform: $platform" >&2
+  if [ -n "$reason" ]; then
+    echo "$reason" >&2
+  fi
+  print_source_build_help
+  exit 1
+}
+
+detect_linux_libc() {
+  if command -v ldd >/dev/null 2>&1; then
+    # `ldd --version` output varies by libc implementation.
+    ldd_output="$(ldd --version 2>&1 || true)"
+    case "$ldd_output" in
+      *musl*)
+        echo "musl"
+        return
+        ;;
+      *glibc*|*GNU*|*GNU\ C\ Library*)
+        echo "glibc"
+        return
+        ;;
+    esac
+  fi
+
+  if [ -f /etc/alpine-release ]; then
+    echo "musl"
+    return
+  fi
+
+  echo "glibc"
+}
+
 need_cmd uname
 need_cmd chmod
 need_cmd mkdir
@@ -45,40 +90,84 @@ need_cmd mv
 need_cmd rm
 need_cmd mktemp
 
-OS="$(uname -s)"
-ARCH="$(uname -m)"
+OS_RAW="$(uname -s)"
+ARCH_RAW="$(uname -m)"
+LIBC=""
 
-case "$OS" in
-  Darwin) PLATFORM="darwin" ;;
-  Linux) PLATFORM="linux" ;;
+case "$OS_RAW" in
+  Darwin)
+    OS="darwin"
+    ;;
+  Linux)
+    OS="linux"
+    ;;
+  MINGW*|MSYS*|CYGWIN*|Windows_NT)
+    OS="windows"
+    ;;
   *)
-    echo "Error: unsupported operating system: $OS" >&2
-    echo "Supported: macOS and Linux" >&2
-    exit 1
+    unsupported_platform "$OS_RAW/$ARCH_RAW"
     ;;
 esac
 
-case "$ARCH" in
-  arm64|aarch64) ARCH="arm64" ;;
-  x86_64|amd64) ARCH="x64" ;;
+case "$ARCH_RAW" in
+  x86_64|amd64)
+    ARCH="x64"
+    ;;
+  arm64|aarch64)
+    ARCH="arm64"
+    ;;
   *)
-    echo "Error: unsupported architecture: $ARCH" >&2
-    echo "Supported: arm64 and x86_64/amd64" >&2
-    exit 1
+    unsupported_platform "$OS_RAW/$ARCH_RAW"
     ;;
 esac
 
-ASSET="$BINARY_NAME-$PLATFORM-$ARCH"
-
-if [ "$PLATFORM" = "linux" ] && [ "$ARCH" = "arm64" ]; then
-  echo "Error: no Linux arm64 release asset published for cook yet." >&2
-  echo "Available release assets: cook-darwin-arm64, cook-darwin-x64, cook-linux-x64" >&2
-  exit 1
+if [ "$OS" = "linux" ]; then
+  LIBC="$(detect_linux_libc)"
 fi
+
+case "$OS:$ARCH" in
+  darwin:arm64)
+    ASSET="${RELEASE_BINARY_NAME}-darwin-arm64"
+    ;;
+  darwin:x64)
+    ASSET="${RELEASE_BINARY_NAME}-darwin-x64"
+    ;;
+  linux:x64)
+    if [ "$LIBC" = "musl" ]; then
+      ASSET="${RELEASE_BINARY_NAME}-linux-x64-musl"
+    else
+      ASSET="${RELEASE_BINARY_NAME}-linux-x64"
+    fi
+    ;;
+  linux:arm64)
+    if [ "$LIBC" = "musl" ]; then
+      unsupported_platform "$OS_RAW/$ARCH_RAW (musl)" "The release matrix currently provides Linux arm64 glibc binaries only."
+    fi
+    ASSET="${RELEASE_BINARY_NAME}-linux-arm64"
+    ;;
+  windows:x64)
+    ASSET="${RELEASE_BINARY_NAME}-windows-x64.exe"
+    ;;
+  *)
+    unsupported_platform "$OS_RAW/$ARCH_RAW"
+    ;;
+esac
 
 URL="$DOWNLOAD_BASE/$ASSET"
 TMP_DIR="$(mktemp -d)"
-TMP_FILE="$TMP_DIR/$BINARY_NAME"
+TMP_FILE="$TMP_DIR/$ASSET"
+
+INSTALL_NAME="$BINARY_NAME"
+if [ "$OS" = "windows" ]; then
+  case "$INSTALL_NAME" in
+    *.exe)
+      ;;
+    *)
+      INSTALL_NAME="${INSTALL_NAME}.exe"
+      ;;
+  esac
+fi
+INSTALL_PATH="$INSTALL_DIR/$INSTALL_NAME"
 
 cleanup() {
   rm -rf "$TMP_DIR"
@@ -97,24 +186,35 @@ download() {
   fi
 
   echo "Error: neither curl nor wget is installed." >&2
+  print_source_build_help
   exit 1
 }
 
 echo "Installing $BINARY_NAME from $URL"
-download
+if ! download; then
+  echo "Error: failed to download prebuilt binary from $URL" >&2
+  print_source_build_help
+  exit 1
+fi
+
+if [ ! -s "$TMP_FILE" ]; then
+  echo "Error: downloaded file is empty: $TMP_FILE" >&2
+  print_source_build_help
+  exit 1
+fi
 
 chmod +x "$TMP_FILE"
 mkdir -p "$INSTALL_DIR"
-mv "$TMP_FILE" "$INSTALL_DIR/$BINARY_NAME"
+mv "$TMP_FILE" "$INSTALL_PATH"
 
 echo
-echo "Installed $BINARY_NAME to $INSTALL_DIR/$BINARY_NAME"
+echo "Installed $BINARY_NAME to $INSTALL_PATH"
 case ":$PATH:" in
   *":$INSTALL_DIR:"*)
-    echo "Run: $BINARY_NAME --version"
+    echo "Run: $INSTALL_NAME --version"
     ;;
   *)
     echo "Note: $INSTALL_DIR is not in your PATH."
-    echo "Add it to your shell profile, then run: $BINARY_NAME --version"
+    echo "Add it to your shell profile, then run: $INSTALL_NAME --version"
     ;;
 esac
