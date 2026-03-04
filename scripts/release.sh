@@ -40,7 +40,8 @@ build_target() {
 TARGET_MATRIX=(
   "bun-darwin-arm64:cook-darwin-arm64"
   "bun-darwin-x64-baseline:cook-darwin-x64"
-  "bun-linux-x64-baseline:cook-linux-x64"
+  "bun-linux-x64:cook-linux-x64"
+  "bun-linux-x64-baseline:cook-linux-x64-baseline"
   "bun-linux-x64-musl-baseline:cook-linux-x64-musl"
   "bun-linux-arm64:cook-linux-arm64"
   "bun-windows-x64-baseline:cook-windows-x64"
