@@ -1,7 +1,7 @@
 {
   "name": "cook",
-  "version": "0.1.0",
-  "description": "Shell-native micro agent for natural language task execution",
+  "version": "v0.1.1",
+  "description": "Portable terminal AI agent that runs anywhere.",
   "type": "module",
   "private": true,
   "bin": {
