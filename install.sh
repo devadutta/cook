@@ -19,7 +19,7 @@ EOF
                                           
 REPO_OWNER="devadutta"
 REPO_NAME="cook"
-DEFAULT_VERSION="v0.1.0"
+DEFAULT_VERSION="0.1.0"
 RELEASE_BINARY_NAME="cook"
 
 VERSION="${COOK_VERSION:-$DEFAULT_VERSION}"
