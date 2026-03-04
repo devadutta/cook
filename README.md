@@ -2,6 +2,28 @@
 
 `cook` is a shell-native micro agent that runs natural-language tasks using Bun + Vercel AI SDK 6 `ToolLoopAgent`.
 
+## Install
+
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf https://raw.githubusercontent.com/devadutta/cook/main/install.sh | sh
+```
+
+You can also host the same script on your own domain and keep the same pattern:
+
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf <your-install-script-url> | sh
+```
+
+Installer overrides:
+
+```bash
+# install a specific release tag
+curl --proto '=https' --tlsv1.2 -LsSf https://raw.githubusercontent.com/devadutta/cook/main/install.sh | COOK_VERSION=v0.1.0 sh
+
+# install to a custom bin directory
+curl --proto '=https' --tlsv1.2 -LsSf https://raw.githubusercontent.com/devadutta/cook/main/install.sh | COOK_INSTALL_DIR="$HOME/bin" sh
+```
+
 ## Setup
 
 ```bash
