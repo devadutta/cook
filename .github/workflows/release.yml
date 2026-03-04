@@ -1,0 +1,58 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release (for example, v0.1.0)"
+        required: true
+        type: string
+
+env:
+  TAG_NAME: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code at tag
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ env.TAG_NAME }}
+
+      - name: Validate tag matches package version
+        run: |
+          set -euo pipefail
+          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+          EXPECTED_TAG="v${PACKAGE_VERSION}"
+          if [[ "${TAG_NAME}" != "${EXPECTED_TAG}" ]]; then
+            echo "Tag/version mismatch: tag=${TAG_NAME}, expected=${EXPECTED_TAG}" >&2
+            exit 1
+          fi
+
+      - name: Setup Bun runtime
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build release binaries
+        run: bun release
+
+      - name: Create GitHub release and upload artifacts
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG_NAME }}
+          name: ${{ env.TAG_NAME }}
+          files: dist/release/*
+          fail_on_unmatched_files: true
+          generate_release_notes: true

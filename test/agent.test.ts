@@ -37,6 +37,18 @@ describe('agent helpers', () => {
     expect(instructions).toMatch(/Current timezone: .+ \(UTC[+-]\d{2}:\d{2}\)\./);
   });
 
+  it('appends host machine context for command compatibility', () => {
+    const instructions = buildBaseInstructions(false);
+    expect(instructions).toContain(
+      'Host machine context (this is the machine you are running on; use it to choose compatible bash commands):',
+    );
+    expect(instructions).toContain('system=');
+    expect(instructions).toContain('kernel=');
+    expect(instructions).toContain('os=');
+    expect(instructions).toContain('hardware=');
+    expect(instructions).not.toContain('runtime=bun/');
+  });
+
   it('logs tool call start/finish payloads with prompt and io details', () => {
     const events: Array<{ type: SessionEventType; payload: Record<string, unknown> }> = [];
     const logger: SessionLogger = {

@@ -2,6 +2,7 @@ import { ToolLoopAgent, stepCountIs } from 'ai';
 import type { StopCondition } from 'ai';
 import type { ModelMessage } from '@ai-sdk/provider-utils';
 import { randomUUID } from 'node:crypto';
+import os from 'node:os';
 import { createGateway } from '@ai-sdk/gateway';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
@@ -32,6 +33,17 @@ function formatLocalDateTimeContext(now = new Date()): string {
   return `Current local date: ${date}. Current local time: ${time}. Current timezone: ${timeZone} (${offset}).`;
 }
 
+function formatHostMachineContext(): string {
+  const hardware = os.machine() || process.arch;
+  return [
+    'Host machine context (this is the machine you are running on; use it to choose compatible bash commands):',
+    `system=${os.type()}`,
+    `kernel=${os.release()}`,
+    `os=${process.platform}`,
+    `hardware=${hardware}.`,
+  ].join(' ');
+}
+
 export function buildBaseInstructions(rawBashOutput: boolean): string {
   return [
     'You are cook, a shell-native micro-agent.',
@@ -50,6 +62,7 @@ export function buildBaseInstructions(rawBashOutput: boolean): string {
     'Return concise final output suitable for stdout in shell pipelines.',
     'Do not wrap final output in markdown fences unless explicitly requested.',
     formatLocalDateTimeContext(),
+    formatHostMachineContext(),
   ].join(' ');
 }
 
