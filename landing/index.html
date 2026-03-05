@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>cook — portable terminal AI agent</title>
+<meta name="description" content="A portable terminal AI agent that runs tasks in natural language. One binary. No runtime. Works with any LLM provider.">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<meta property="og:title" content="cook — portable terminal AI agent">
+<meta property="og:description" content="A portable terminal AI agent that runs tasks in natural language. One binary. No runtime. Works with any LLM provider.">
+<meta property="og:image" content="https://getcook.dev/cook-og.jpg">
+<meta property="og:url" content="https://getcook.dev">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="cook — portable terminal AI agent">
+<meta name="twitter:description" content="One binary. No runtime. Works with any LLM provider.">
+<meta name="twitter:image" content="https://getcook.dev/cook-og.jpg">
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --surface: #141414;
+    --border: #262626;
+    --border-highlight: #3a3a3a;
+    --text: #e0e0e0;
+    --text-dim: #707070;
+    --text-muted: #505050;
+    --accent: #c8ff00;
+    --accent-dim: #6b8700;
+    --red: #ff5f57;
+    --yellow: #febc2e;
+    --green: #28c840;
+    --blue: #5fa8ff;
+    --cyan: #56d4bc;
+    --mono: 'SF Mono', 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', 'Monaco', monospace;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html {
+    scroll-behavior: smooth;
+    font-size: 15px;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--mono);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::selection {
+    background: var(--accent);
+    color: var(--bg);
+  }
+
+  a {
+    color: var(--accent);
+    text-decoration: none;
+    transition: opacity 0.15s;
+  }
+  a:hover { opacity: 0.8; }
+
+  /* ---- LAYOUT ---- */
+  .container {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+
+  section {
+    padding: 80px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  section:last-of-type { border-bottom: none; }
+
+  /* ---- HERO ---- */
+  .hero {
+    padding: 100px 0 80px;
+    text-align: center;
+  }
+
+  .hero-ascii {
+    color: var(--accent);
+    font-size: 11px;
+    line-height: 1.3;
+    letter-spacing: 0;
+    margin-bottom: 32px;
+    text-align: left;
+    display: inline-block;
+  }
+
+  .hero-tagline {
+    font-size: 1.15rem;
+    color: var(--text);
+    margin-bottom: 8px;
+    font-weight: 400;
+  }
+
+  .hero-sub {
+    font-size: 0.85rem;
+    color: var(--text-dim);
+    margin-bottom: 40px;
+  }
+
+  .hero-install {
+  }
+
+  .install-box {
+    display: inline-block;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 24px;
+    font-size: 0.85rem;
+    color: var(--text);
+    position: relative;
+    cursor: pointer;
+    transition: border-color 0.2s;
+    text-align: left;
+  }
+  .install-box:hover {
+    border-color: var(--border-highlight);
+  }
+  .install-box .prompt { color: var(--accent); }
+  .install-box .comment { color: var(--text-muted); font-size: 0.75rem; display: block; margin-top: 4px; }
+  .install-box .copied-toast {
+    position: absolute;
+    top: -32px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--accent);
+    color: var(--bg);
+    font-size: 0.7rem;
+    padding: 4px 10px;
+    border-radius: 4px;
+    opacity: 0;
+    transition: opacity 0.2s;
+    pointer-events: none;
+  }
+  .install-box .copied-toast.show { opacity: 1; }
+
+  .hero-nav {
+    margin-top: 32px;
+    display: flex;
+    justify-content: center;
+    gap: 24px;
+    font-size: 0.8rem;
+  }
+  .hero-nav a { color: var(--text-dim); }
+  .hero-nav a:hover { color: var(--text); }
+
+  /* ---- TERMINAL WINDOW ---- */
+  .terminal {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    margin: 0 auto;
+    max-width: 680px;
+  }
+
+  .terminal-bar {
+    display: flex;
+    align-items: center;
+    padding: 12px 16px;
+    background: #1a1a1a;
+    border-bottom: 1px solid var(--border);
+    gap: 8px;
+  }
+
+  .terminal-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+  }
+  .terminal-dot.red { background: var(--red); }
+  .terminal-dot.yellow { background: var(--yellow); }
+  .terminal-dot.green { background: var(--green); }
+
+  .terminal-title {
+    flex: 1;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    margin-right: 52px;
+  }
+
+  .terminal-body {
+    padding: 20px;
+    font-size: 0.8rem;
+    line-height: 1.7;
+    height: 340px;
+    overflow-y: auto;
+    position: relative;
+  }
+
+  .terminal-body::-webkit-scrollbar {
+    width: 6px;
+  }
+  .terminal-body::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .terminal-body::-webkit-scrollbar-thumb {
+    background: var(--border-highlight);
+    border-radius: 3px;
+  }
+
+  .terminal-line {
+    white-space: pre-wrap;
+    word-break: break-all;
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  .terminal-line.visible {
+    opacity: 1;
+    transform: translateY(0);
+    transition: opacity 0.15s ease, transform 0.15s ease;
+  }
+  .terminal-line.blank { height: 1.7em; }
+
+  .t-prompt { color: var(--accent); }
+  .t-cmd { color: var(--text); }
+  .t-cook { color: var(--cyan); }
+  .t-bash { color: var(--text-dim); }
+  .t-mutate { color: var(--yellow); }
+  .t-input { color: var(--green); }
+  .t-dim { color: var(--text-muted); }
+  .t-result { color: var(--text-dim); }
+
+  .cursor-blink {
+    display: inline-block;
+    width: 8px;
+    height: 15px;
+    background: var(--accent);
+    vertical-align: text-bottom;
+    animation: blink 1s step-end infinite;
+  }
+
+  /* ---- FEATURES ---- */
+  .features-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    margin-top: 40px;
+  }
+
+  .feature {
+    padding: 20px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    transition: border-color 0.2s;
+  }
+  .feature:hover { border-color: var(--border-highlight); }
+
+  .feature-icon {
+    font-size: 0.75rem;
+    color: var(--accent);
+    margin-bottom: 10px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+
+  .feature h3 {
+    font-size: 0.9rem;
+    font-weight: 500;
+    margin-bottom: 6px;
+  }
+
+  .feature p {
+    font-size: 0.78rem;
+    color: var(--text-dim);
+    line-height: 1.5;
+  }
+
+  /* ---- SECTION HEADERS ---- */
+  .section-label {
+    font-size: 0.7rem;
+    color: var(--accent-dim);
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    margin-bottom: 12px;
+  }
+
+  .section-title {
+    font-size: 1.3rem;
+    font-weight: 500;
+    margin-bottom: 16px;
+  }
+
+  .section-desc {
+    color: var(--text-dim);
+    font-size: 0.85rem;
+    margin-bottom: 32px;
+    max-width: 540px;
+  }
+
+  /* ---- PROVIDERS TABLE ---- */
+  .provider-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8rem;
+    margin-top: 24px;
+  }
+
+  .provider-table th {
+    text-align: left;
+    color: var(--text-muted);
+    font-weight: 400;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  .provider-table td {
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-dim);
+  }
+
+  .provider-table td:first-child { color: var(--text); }
+
+  .provider-table tr:last-child td { border-bottom: none; }
+
+  /* ---- CODE BLOCKS ---- */
+  .code-block {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 20px;
+    font-size: 0.8rem;
+    font-family: var(--mono);
+    overflow-x: auto;
+    margin: 16px 0;
+    line-height: 1.7;
+    white-space: pre;
+  }
+  .code-block .prompt { color: var(--accent); }
+  .code-block .comment { color: var(--text-muted); }
+
+  /* ---- SAFETY SECTION ---- */
+  .safety-list {
+    list-style: none;
+    margin-top: 24px;
+  }
+  .safety-list li {
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.85rem;
+    color: var(--text-dim);
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+  }
+  .safety-list li:last-child { border-bottom: none; }
+  .safety-list .check {
+    color: var(--green);
+    flex-shrink: 0;
+  }
+
+  /* ---- EXAMPLES ---- */
+  .examples {
+    margin-top: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .example-item {
+    display: flex;
+    gap: 16px;
+    align-items: baseline;
+    font-size: 0.8rem;
+  }
+  .example-desc {
+    color: var(--text-muted);
+    min-width: 180px;
+    flex-shrink: 0;
+  }
+  .example-cmd { color: var(--text); }
+
+  /* ---- CTA ---- */
+  .cta {
+    text-align: center;
+    padding: 100px 0;
+  }
+  .cta-title {
+    font-size: 1.2rem;
+    margin-bottom: 24px;
+  }
+
+  /* ---- FOOTER ---- */
+  footer {
+    text-align: center;
+    padding: 40px 0;
+    color: var(--text-muted);
+    font-size: 0.7rem;
+  }
+  footer a { color: var(--text-dim); }
+
+  /* ---- ANIMATIONS ---- */
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+  }
+
+  /* ---- RESPONSIVE ---- */
+  @media (max-width: 600px) {
+    .hero-ascii { font-size: 7.5px; }
+    .features-grid { grid-template-columns: 1fr; }
+    .hero-nav { flex-wrap: wrap; gap: 12px; }
+    .terminal-body { padding: 14px; font-size: 0.72rem; }
+    .example-item { flex-direction: column; gap: 4px; }
+    .example-desc { min-width: 0; }
+    section { padding: 60px 0; }
+    .hero { padding: 60px 0; }
+  }
+</style>
+</head>
+<body>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="container">
+<pre class="hero-ascii">
+                              oooo
+                              `888
+ .ooooo.   .ooooo.   .ooooo.   888  oooo
+d88' `"Y8 d88' `88b d88' `88b  888 .8P'
+888       888   888 888   888  888888.
+888   .o8 888   888 888   888  888 `88b.
+`Y8bod8P' `Y8bod8P' `Y8bod8P' o888o o888o
+</pre>
+
+    <p class="hero-tagline">A portable terminal AI agent.</p>
+    <p class="hero-sub">One binary. No runtime. Works with any LLM provider.</p>
+
+    <div class="hero-install">
+      <div class="install-box" onclick="copyInstall(this)">
+        <span class="copied-toast">copied</span>
+        <span class="prompt">$</span> curl -fsSL https://getcook.dev/install.sh | sh
+        <span class="comment"># click to copy</span>
+      </div>
+    </div>
+
+    <nav class="hero-nav">
+      <a href="#demo">demo</a>
+      <a href="#features">features</a>
+      <a href="#providers">providers</a>
+      <a href="#safety">safety</a>
+      <a href="https://github.com/devadutta/cook">github</a>
+    </nav>
+  </div>
+</section>
+
+<!-- DEMO -->
+<section id="demo">
+  <div class="container">
+    <div class="terminal">
+      <div class="terminal-bar">
+        <div class="terminal-dot red"></div>
+        <div class="terminal-dot yellow"></div>
+        <div class="terminal-dot green"></div>
+        <div class="terminal-title">cook</div>
+      </div>
+      <div class="terminal-body" id="terminal-body">
+        <!-- lines injected by JS -->
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section id="features">
+  <div class="container">
+    <div class="section-label">why cook</div>
+    <h2 class="section-title">Your terminal, supercharged.</h2>
+    <p class="section-desc">
+      Most AI tools lock you into an editor or a subscription.
+      cook lives in your shell and works with pipes, scripts, and cron.
+    </p>
+
+    <div class="features-grid">
+      <div class="feature">
+        <div class="feature-icon">01</div>
+        <h3>Shell-native</h3>
+        <p>Pipes in, stdout out. Works with your existing scripts and workflows.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">02</div>
+        <h3>Model-agnostic</h3>
+        <p>Swap between OpenAI, Anthropic, Google, Groq, or Vercel AI Gateway with a flag.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">03</div>
+        <h3>Single binary</h3>
+        <p>Compiles to a standalone executable. No Node, no Python, no runtime.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">04</div>
+        <h3>Safe by default</h3>
+        <p>Every file write and destructive command requires your explicit approval.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">05</div>
+        <h3>Command aliases</h3>
+        <p>Save prompts as .md files. Run them with <code style="color:var(--accent)">cook /deploy</code>. Compatible with Cursor & Claude commands.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">06</div>
+        <h3>Multi-agent</h3>
+        <p>Define multiple agents with different models. Switch per run with <code style="color:var(--accent)">--agent</code>.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- EXAMPLES -->
+<section id="examples">
+  <div class="container">
+    <div class="section-label">usage</div>
+    <h2 class="section-title">Just type what you want.</h2>
+
+    <pre class="code-block"><span class="comment"># natural language — quotes optional</span>
+<span class="prompt">$</span> cook find all TODO comments and summarize them
+
+<span class="comment"># pipe data in</span>
+<span class="prompt">$</span> cat server.log | cook "find the root cause of the 502 errors"
+
+<span class="comment"># command aliases</span>
+<span class="prompt">$</span> cook /create-pr
+
+<span class="comment"># pick a model</span>
+<span class="prompt">$</span> cook --agent fast "what does main.ts export?"
+
+<span class="comment"># preview without executing</span>
+<span class="prompt">$</span> cook --dry-run "refactor the auth module"
+
+<span class="comment"># raw output, no summarization</span>
+<span class="prompt">$</span> cook --raw "find my public IP"</pre>
+  </div>
+</section>
+
+<!-- PROVIDERS -->
+<section id="providers">
+  <div class="container">
+    <div class="section-label">providers</div>
+    <h2 class="section-title">Works with what you have.</h2>
+    <p class="section-desc">
+      Set an API key and cook picks the right model automatically. No config file required.
+    </p>
+
+    <table class="provider-table">
+      <thead>
+        <tr>
+          <th>Provider</th>
+          <th>Env Variable</th>
+          <th>Default Model</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Vercel AI Gateway</td>
+          <td>AI_GATEWAY_API_KEY</td>
+          <td>gemini-3-flash-preview</td>
+        </tr>
+        <tr>
+          <td>OpenAI</td>
+          <td>OPENAI_API_KEY</td>
+          <td>gpt-5.2</td>
+        </tr>
+        <tr>
+          <td>Anthropic</td>
+          <td>ANTHROPIC_API_KEY</td>
+          <td>claude-sonnet-4-6</td>
+        </tr>
+        <tr>
+          <td>Google</td>
+          <td>GOOGLE_GENERATIVE_AI_API_KEY</td>
+          <td>gemini-3-flash-preview</td>
+        </tr>
+        <tr>
+          <td>Groq</td>
+          <td>GROQ_API_KEY</td>
+          <td>kimi-k2-instruct</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- SAFETY -->
+<section id="safety">
+  <div class="container">
+    <div class="section-label">safety</div>
+    <h2 class="section-title">You stay in control.</h2>
+
+    <ul class="safety-list">
+      <li><span class="check">&#10003;</span> File writes and destructive commands require confirmation</li>
+      <li><span class="check">&#10003;</span> Smart mutation detection — model-classified, not regex</li>
+      <li><span class="check">&#10003;</span> File access scoped to current directory by default</li>
+      <li><span class="check">&#10003;</span> <code>--dry-run</code> to preview everything before it runs</li>
+      <li><span class="check">&#10003;</span> Deny any action and give guidance in plain text</li>
+      <li><span class="check">&#10003;</span> Full session logging with visual HTML reports</li>
+    </ul>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="cta">
+  <div class="container">
+    <h2 class="cta-title">Get started in 10 seconds.</h2>
+
+    <pre class="code-block" style="display:inline-block;text-align:left;"><span class="comment"># install</span>
+<span class="prompt">$</span> curl -fsSL https://getcook.dev/install.sh | sh
+
+<span class="comment"># set any provider key</span>
+<span class="prompt">$</span> export ANTHROPIC_API_KEY="sk-..."
+
+<span class="comment"># go</span>
+<span class="prompt">$</span> cook "explain what this project does"</pre>
+
+    <p style="margin-top:24px;font-size:0.8rem;color:var(--text-dim);">
+      <a href="https://github.com/devadutta/cook">View on GitHub</a>
+    </p>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    <p>built with <a href="https://bun.sh">bun</a> &amp; the <a href="https://sdk.vercel.ai">vercel ai sdk</a></p>
+  </div>
+</footer>
+
+<script>
+// ---- COPY INSTALL ----
+function copyInstall(el) {
+  const text = 'curl -fsSL https://getcook.dev/install.sh | sh';
+  navigator.clipboard.writeText(text);
+  const toast = el.querySelector('.copied-toast');
+  toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), 1200);
+}
+
+// ---- TERMINAL SIMULATION ----
+const sequences = [
+  // Sequence 1: commit and push
+  [
+    { type: 'prompt', text: '$ cook commit and push' },
+    { type: 'blank' },
+    { type: 'cook', text: '[cook] chef' },
+    { type: 'bash', text: '[bash] git status' },
+    { type: 'bash', text: '[bash] git diff README.md' },
+    { type: 'blank' },
+    { type: 'mutate', text: '[cook] Mutating action' },
+    { type: 'mutate', text: '[cook] [bash] git add README.md' },
+    { type: 'input', text: '[cook] Proceed? [y/N/a] y' },
+    { type: 'bash', text: '[bash] git add README.md' },
+    { type: 'blank' },
+    { type: 'mutate', text: '[cook] Mutating action' },
+    { type: 'mutate', text: '[cook] [bash] git commit -m "docs: improve README"' },
+    { type: 'input', text: '[cook] Proceed? [y/N/a] y' },
+    { type: 'bash', text: '[bash] git commit -m "docs: improve README"' },
+    { type: 'blank' },
+    { type: 'mutate', text: '[cook] Mutating action' },
+    { type: 'mutate', text: '[cook] [bash] git push' },
+    { type: 'input', text: '[cook] Proceed? [y/N/a] y' },
+    { type: 'bash', text: '[bash] git push' },
+    { type: 'blank' },
+    { type: 'result', text: 'committed and pushed to origin/main.' },
+  ],
+  // Sequence 2: piped input
+  [
+    { type: 'prompt', text: '$ cat errors.log | cook "find the root cause"' },
+    { type: 'blank' },
+    { type: 'cook', text: '[cook] chef' },
+    { type: 'bash', text: '[bash] wc -l /tmp/cook-stdin-7f3a.tmp' },
+    { type: 'bash', text: '[bash] grep -n "ERROR\\|FATAL" /tmp/cook-stdin-7f3a.tmp' },
+    { type: 'bash', text: '[bash] grep -B5 "connection refused" /tmp/cook-stdin-7f3a.tmp' },
+    { type: 'blank' },
+    { type: 'result', text: 'Root cause: Redis connection pool exhausted at' },
+    { type: 'result', text: '03:14:22 UTC. The pool limit (10) was hit after' },
+    { type: 'result', text: 'a retry storm from the payment service. All 502s' },
+    { type: 'result', text: 'trace back to this single point of failure.' },
+  ],
+  // Sequence 3: quick task
+  [
+    { type: 'prompt', text: '$ cook --agent fast "list exported functions in src/"' },
+    { type: 'blank' },
+    { type: 'cook', text: '[cook] fast' },
+    { type: 'bash', text: '[bash] grep -rn "^export" src/ --include="*.ts"' },
+    { type: 'blank' },
+    { type: 'result', text: 'Found 14 exported functions across 6 files:' },
+    { type: 'result', text: '  cli.ts      — main, parseArgs, run' },
+    { type: 'result', text: '  agent.ts    — createAgent, resolveProvider' },
+    { type: 'result', text: '  tools.ts    — readFile, writeFile, editFile, bash' },
+    { type: 'result', text: '  config.ts   — loadConfig, mergeConfig, initConfig' },
+    { type: 'result', text: '  prompt.ts   — composePrompt' },
+    { type: 'result', text: '  session.ts  — startSession' },
+  ],
+  // Sequence 4: dry run
+  [
+    { type: 'prompt', text: '$ cook --dry-run "rename all .jsx files to .tsx"' },
+    { type: 'blank' },
+    { type: 'cook', text: '[cook] chef (dry-run)' },
+    { type: 'bash', text: '[bash] find src/ -name "*.jsx"' },
+    { type: 'blank' },
+    { type: 'mutate', text: '[cook] Would execute:' },
+    { type: 'mutate', text: '[cook] [bash] mv src/App.jsx src/App.tsx' },
+    { type: 'mutate', text: '[cook] [bash] mv src/Header.jsx src/Header.tsx' },
+    { type: 'mutate', text: '[cook] [bash] mv src/Footer.jsx src/Footer.tsx' },
+    { type: 'blank' },
+    { type: 'result', text: '3 files would be renamed. Run without' },
+    { type: 'result', text: '--dry-run to execute.' },
+  ],
+];
+
+const typeClasses = {
+  prompt: 't-prompt',
+  cook: 't-cook',
+  bash: 't-bash',
+  mutate: 't-mutate',
+  input: 't-input',
+  result: 't-result',
+  blank: '',
+};
+
+const body = document.getElementById('terminal-body');
+let currentSequence = 0;
+let running = false;
+
+function clearTerminal() {
+  body.innerHTML = '';
+}
+
+async function sleep(ms) {
+  return new Promise(r => setTimeout(r, ms));
+}
+
+async function typeText(el, text, speed) {
+  for (let i = 0; i <= text.length; i++) {
+    el.textContent = text.slice(0, i);
+    await sleep(speed);
+  }
+}
+
+async function playSequence(seq) {
+  clearTerminal();
+  for (let i = 0; i < seq.length; i++) {
+    const line = seq[i];
+    const el = document.createElement('div');
+    el.className = 'terminal-line';
+
+    if (line.type === 'blank') {
+      el.classList.add('blank');
+      body.appendChild(el);
+      el.classList.add('visible');
+      await sleep(100);
+      continue;
+    }
+
+    el.className = `terminal-line ${typeClasses[line.type] || ''}`;
+    body.appendChild(el);
+    el.classList.add('visible');
+
+    if (line.type === 'prompt') {
+      await typeText(el, line.text, 28);
+      await sleep(400);
+    } else if (line.type === 'input') {
+      // show the prompt part, then "type" the answer
+      const parts = line.text.split('] ');
+      const promptPart = parts.slice(0, -1).join('] ') + '] ';
+      const answer = parts[parts.length - 1];
+      el.textContent = promptPart;
+      await sleep(300);
+      await typeText(el, promptPart + answer, 40);
+      await sleep(200);
+    } else {
+      el.textContent = line.text;
+      await sleep(line.type === 'result' ? 60 : 120);
+    }
+
+    // auto-scroll
+    body.scrollTop = body.scrollHeight;
+  }
+
+  // blinking cursor at the end
+  const cursorLine = document.createElement('div');
+  cursorLine.className = 'terminal-line visible';
+  cursorLine.innerHTML = '<span class="t-prompt">$ </span><span class="cursor-blink"></span>';
+  body.appendChild(cursorLine);
+  body.scrollTop = body.scrollHeight;
+}
+
+async function runDemo() {
+  if (running) return;
+  running = true;
+
+  while (true) {
+    await playSequence(sequences[currentSequence]);
+    currentSequence = (currentSequence + 1) % sequences.length;
+    await sleep(3500);
+  }
+}
+
+// start when terminal scrolls into view
+const termObserver = new IntersectionObserver((entries) => {
+  if (entries[0].isIntersecting) {
+    runDemo();
+    termObserver.disconnect();
+  }
+}, { threshold: 0.3 });
+
+termObserver.observe(document.querySelector('.terminal'));
+</script>
+
+</body>
+</html>

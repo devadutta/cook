@@ -15,7 +15,8 @@
     "share": "bun run scripts/build-session-viz.ts",
     "share:all": "bun run scripts/build-session-viz.ts all",
     "test": "bun test",
-    "typecheck": "bunx tsc --noEmit"
+    "typecheck": "bunx tsc --noEmit",
+    "deploy": "cp install.sh landing/install.sh && npx wrangler deploy"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.49",
