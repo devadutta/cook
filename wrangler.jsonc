@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "cook-landing",
+  "name": "cook",
   "compatibility_date": "2025-04-01",
   "assets": {
     "directory": "./landing"
