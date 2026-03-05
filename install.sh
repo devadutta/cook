@@ -229,6 +229,70 @@ chmod +x "$TMP_FILE"
 mkdir -p "$INSTALL_DIR"
 mv "$TMP_FILE" "$INSTALL_PATH"
 
+ENV_FILE="$INSTALL_DIR/env"
+cat >"$ENV_FILE" <<'EOF'
+#!/bin/sh
+# add binaries to PATH if they aren't added yet
+# affix colons on either side of $PATH to simplify matching
+case ":${PATH}:" in
+    *:"$HOME/.cook/bin":*)
+        ;;
+    *)
+        # Prepending path in case a system-installed binary needs to be overridden
+        export PATH="$HOME/.cook/bin:$PATH"
+        ;;
+esac
+EOF
+chmod +x "$ENV_FILE"
+
+detect_profile_file() {
+  if [ -n "${PROFILE:-}" ]; then
+    echo "$PROFILE"
+    return
+  fi
+
+  shell_name="${SHELL##*/}"
+  case "$shell_name" in
+    zsh)
+      echo "$HOME/.zshrc"
+      ;;
+    bash)
+      if [ -f "$HOME/.bash_profile" ]; then
+        echo "$HOME/.bash_profile"
+      else
+        echo "$HOME/.bashrc"
+      fi
+      ;;
+    *)
+      if [ -f "$HOME/.profile" ]; then
+        echo "$HOME/.profile"
+      else
+        echo "$HOME/.zshrc"
+      fi
+      ;;
+  esac
+}
+
+append_profile_block_if_missing() {
+  profile_file="$1"
+  profile_line='. "$HOME/.cook/bin/env"'
+  profile_dir="${profile_file%/*}"
+
+  if [ -f "$profile_file" ] && grep -Fqs "$profile_line" "$profile_file"; then
+    echo "Profile already includes cook setup: $profile_file"
+    return
+  fi
+
+  mkdir -p "$profile_dir"
+  : >>"$profile_file"
+  {
+    echo
+    echo "# cook setup"
+    echo '. "$HOME/.cook/bin/env"'
+  } >>"$profile_file"
+  echo "Updated profile: $profile_file"
+}
+
 echo
 echo "Installed $BINARY_NAME to $INSTALL_PATH"
 case ":$PATH:" in
@@ -240,3 +304,26 @@ case ":$PATH:" in
     echo "Add it to your shell profile, then run: $INSTALL_NAME --version"
     ;;
 esac
+
+echo
+echo "Add the following lines to your profile:"
+cat <<'EOF'
+# cook setup
+. "$HOME/.cook/bin/env"
+EOF
+
+if [ -t 0 ]; then
+  PROFILE_FILE="$(detect_profile_file)"
+  printf "Append these lines to %s now? [y/N] " "$PROFILE_FILE"
+  read -r add_to_profile
+  case "$add_to_profile" in
+    y|Y|yes|YES|Yes)
+      append_profile_block_if_missing "$PROFILE_FILE"
+      ;;
+    *)
+      echo "Skipped profile update."
+      ;;
+  esac
+else
+  echo "Non-interactive shell detected; skipping profile update prompt."
+fi
