@@ -60,6 +60,38 @@ describe('createRuntimeConfig', () => {
     expect(runtime.agent.model).toBe('google/gemini-3-flash-preview');
   });
 
+  it('selects OpenAI ChatGPT OAuth when it is the only credential', () => {
+    const runtime = createRuntimeConfig(
+      buildConfig(false),
+      {},
+      { openaiOAuth: true },
+    );
+    expect(runtime.agent.provider).toBe('openai-codex');
+    expect(runtime.agent.model).toBe('gpt-5.6-sol');
+  });
+
+  it('prefers an OpenAI API key over OpenAI ChatGPT OAuth', () => {
+    process.env.OPENAI_API_KEY = 'openai-key';
+    const runtime = createRuntimeConfig(
+      buildConfig(false),
+      {},
+      { openaiOAuth: true },
+    );
+    expect(runtime.agent.provider).toBe('openai');
+    expect(runtime.agent.model).toBe('gpt-5.2');
+  });
+
+  it('prefers the gateway over OpenAI ChatGPT OAuth', () => {
+    process.env.AI_GATEWAY_API_KEY = 'gateway-key';
+    const runtime = createRuntimeConfig(
+      buildConfig(false),
+      {},
+      { openaiOAuth: true },
+    );
+    expect(runtime.agent.provider).toBe('gateway');
+    expect(runtime.agent.model).toBe('google/gemini-3-flash-preview');
+  });
+
   it('selects openai when only OPENAI_API_KEY is set', () => {
     process.env.OPENAI_API_KEY = 'openai-key';
     const runtime = createRuntimeConfig(buildConfig(false), {});

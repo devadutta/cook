@@ -5,6 +5,29 @@ import path from 'node:path';
 import { loadConfig } from '../src/config.ts';
 
 describe('loadConfig', () => {
+  it('accepts an explicitly configured OpenAI ChatGPT OAuth agent', async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'cook-config-test-'));
+    const cwd = path.join(tempRoot, 'workspace');
+    const home = path.join(tempRoot, 'home');
+    await mkdir(path.join(cwd, '.cook'), { recursive: true });
+    await mkdir(path.join(home, '.cook'), { recursive: true });
+    await Bun.write(path.join(cwd, '.cook', 'config.json'), JSON.stringify({
+      default_agent: 'chatgpt',
+      agents: {
+        chatgpt: {
+          provider: 'openai-codex',
+          model: 'gpt-5.6-sol',
+        },
+      },
+    }));
+
+    const loaded = await loadConfig({ cwd, homeDir: home }, {});
+    expect(loaded.config.agents.chatgpt).toEqual({
+      provider: 'openai-codex',
+      model: 'gpt-5.6-sol',
+    });
+  });
+
   it('merges global, local, and CLI overrides in correct precedence', async () => {
     const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'cook-config-test-'));
     const cwd = path.join(tempRoot, 'workspace');

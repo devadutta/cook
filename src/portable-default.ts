@@ -4,8 +4,8 @@ import type { AgentConfig, AgentProvider, CookConfig } from './types.ts';
 export interface PortableDefaultCandidate {
   provider: AgentProvider;
   model: string;
-  credential_env: string;
-  source: 'gateway' | 'provider_api_keys';
+  credential_env?: string;
+  source: 'gateway' | 'provider_api_keys' | 'openai_oauth';
 }
 
 export const PORTABLE_DEFAULT_PRECEDENCE: PortableDefaultCandidate[] = [
@@ -20,6 +20,11 @@ export const PORTABLE_DEFAULT_PRECEDENCE: PortableDefaultCandidate[] = [
     model: 'gpt-5.2',
     credential_env: 'OPENAI_API_KEY',
     source: 'provider_api_keys',
+  },
+  {
+    provider: 'openai-codex',
+    model: 'gpt-5.6-sol',
+    source: 'openai_oauth',
   },
   {
     provider: 'anthropic',
@@ -98,18 +103,31 @@ export function isBuiltInDefaultAgent(agentName: string, agent: AgentConfig): bo
 export function resolvePortableDefaultProvider(
   config: CookConfig,
   env: Record<string, string | undefined> = process.env,
+  availability: { openaiOAuth?: boolean } = {},
 ): PortableDefaultCandidate | null {
   for (const candidate of PORTABLE_DEFAULT_PRECEDENCE) {
+    if (candidate.source === 'openai_oauth') {
+      if (availability.openaiOAuth) {
+        return candidate;
+      }
+      continue;
+    }
+
+    const credentialEnv = candidate.credential_env;
+    if (!credentialEnv) {
+      continue;
+    }
+
     if (candidate.source === 'gateway') {
-      if (hasValue(config.ai_gateway_api_key) || hasValue(env[candidate.credential_env])) {
+      if (hasValue(config.ai_gateway_api_key) || hasValue(env[credentialEnv])) {
         return candidate;
       }
       continue;
     }
 
     if (
-      hasValue(config.provider_api_keys?.[candidate.credential_env]) ||
-      hasValue(env[candidate.credential_env])
+      hasValue(config.provider_api_keys?.[credentialEnv]) ||
+      hasValue(env[credentialEnv])
     ) {
       return candidate;
     }

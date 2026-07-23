@@ -8,6 +8,10 @@ import { createAnthropic } from '@ai-sdk/anthropic';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createGroq } from '@ai-sdk/groq';
 import { createOpenAI } from '@ai-sdk/openai';
+import {
+  createOpenAICodexFetch,
+  OPENAI_CODEX_BASE_URL,
+} from './openai-oauth.ts';
 import { createToolSet } from './tools/index.ts';
 import type {
   AgentRunOptions,
@@ -113,6 +117,18 @@ function createProviderModel(options: AgentRunOptions) {
 
   if (provider === 'openai') {
     return createOpenAI()(model);
+  }
+
+  if (provider === 'openai-codex') {
+    const openai = createOpenAI({
+      name: 'openai',
+      baseURL: OPENAI_CODEX_BASE_URL,
+      apiKey: 'oauth',
+      fetch: createOpenAICodexFetch({
+        logDebug: options.logDebug,
+      }),
+    });
+    return openai(model);
   }
 
   if (provider === 'anthropic') {
@@ -512,16 +528,58 @@ export async function runAgent(options: AgentRunOptions): Promise<AgentRunResult
     callStarted = true;
     callLogger.onCallStart();
 
-    const result = await executeAgent.generate({
+    const generationOptions = {
       messages: inputMessages,
-    });
-    const terminalBashAnswer = extractTerminalBashAnswer(result.toolResults);
+      ...(options.runtime.agent.provider === 'openai-codex'
+        ? {
+            providerOptions: {
+              openai: {
+                store: false,
+              },
+            },
+          }
+        : {}),
+    };
+    let resultText: string;
+    let resultContent: unknown[];
+    let resultToolResults: Array<{ toolName: string; output: unknown }>;
+    let responseMessages: ModelMessage[];
+
+    if (options.runtime.agent.provider === 'openai-codex') {
+      // ChatGPT's Codex Responses endpoint is an SSE endpoint, so consume the
+      // streaming AI SDK result before mapping it to Cook's normal result.
+      const result = await executeAgent.stream(generationOptions);
+      const [text, content, toolResults, response] = await Promise.all([
+        result.text,
+        result.content,
+        result.toolResults,
+        result.response,
+      ]);
+      resultText = text;
+      resultContent = content as unknown[];
+      resultToolResults = toolResults as Array<{
+        toolName: string;
+        output: unknown;
+      }>;
+      responseMessages = response.messages as ModelMessage[];
+    } else {
+      const result = await executeAgent.generate(generationOptions);
+      resultText = result.text;
+      resultContent = result.content as unknown[];
+      resultToolResults = result.toolResults as Array<{
+        toolName: string;
+        output: unknown;
+      }>;
+      responseMessages = result.response.messages as ModelMessage[];
+    }
+
+    const terminalBashAnswer = extractTerminalBashAnswer(resultToolResults);
 
     const finalResult = mapExecuteResult(
       runtime.mutation_plan,
-      terminalBashAnswer?.text ?? result.text,
-      extractPendingApprovals(result.content as unknown[]),
-      result.response.messages as ModelMessage[],
+      terminalBashAnswer?.text ?? resultText,
+      extractPendingApprovals(resultContent),
+      responseMessages,
       terminalBashAnswer?.terminal,
     );
     callLogger.onCallFinish({

@@ -6,6 +6,8 @@ import { applyConfiguredApiKeys } from './auth.ts';
 import { parseCli } from './cli-parse.ts';
 import { loadConfig } from './config.ts';
 import { runConfigInitCommand } from './config-init.ts';
+import { runLoginCommand, runLogoutCommand } from './login.ts';
+import { hasOpenAICodexCredentials } from './openai-oauth.ts';
 import {
   isBuiltInDefaultAgent,
   resolvePortableDefaultProvider,
@@ -46,7 +48,7 @@ export function rewriteKnownErrorMessage(message: string): string {
   }
 
   return [
-    'Set one of these API keys in env, or run `cook config init`:',
+    'Set one of these API keys in env, run `cook config init`, or run `cook login` to use your ChatGPT subscription:',
     '- AI_GATEWAY_API_KEY',
     '- OPENAI_API_KEY',
     '- ANTHROPIC_API_KEY',
@@ -98,6 +100,7 @@ function resolveRuntimeAgent(
   config: CookConfig,
   agentName: string,
   flags: CliFlags,
+  availability: { openaiOAuth?: boolean },
 ): ResolvedAgentConfig {
   const baseAgent = config.agents[agentName];
   if (!baseAgent) {
@@ -106,7 +109,11 @@ function resolveRuntimeAgent(
 
   let resolvedAgent = baseAgent;
   if (isBuiltInDefaultAgent(agentName, baseAgent)) {
-    const portableProvider = resolvePortableDefaultProvider(config, process.env);
+    const portableProvider = resolvePortableDefaultProvider(
+      config,
+      process.env,
+      availability,
+    );
     if (portableProvider) {
       resolvedAgent = {
         ...baseAgent,
@@ -122,9 +129,13 @@ function resolveRuntimeAgent(
   };
 }
 
-export function createRuntimeConfig(config: CookConfig, flags: CliFlags): RuntimeConfig {
+export function createRuntimeConfig(
+  config: CookConfig,
+  flags: CliFlags,
+  availability: { openaiOAuth?: boolean } = {},
+): RuntimeConfig {
   const agent_name = resolveAgentName(config, flags);
-  const agent = resolveRuntimeAgent(config, agent_name, flags);
+  const agent = resolveRuntimeAgent(config, agent_name, flags, availability);
 
   const {
     agents: _agents,
@@ -147,6 +158,12 @@ async function run(): Promise<number> {
   if (rawArgs[0] === 'config' && rawArgs[1] === 'init') {
     return runConfigInitCommand(rawArgs.slice(2));
   }
+  if (rawArgs[0] === 'login') {
+    return runLoginCommand(rawArgs.slice(1));
+  }
+  if (rawArgs[0] === 'logout') {
+    return runLogoutCommand(rawArgs.slice(1));
+  }
 
   const { instruction: parsedInstruction, flags } = parseCli(process.argv);
   const resolvedInstruction = await resolveCommandInstruction({
@@ -158,7 +175,8 @@ async function run(): Promise<number> {
     { cwd: process.cwd() },
     toConfigOverrides(flags),
   );
-  const runtime = createRuntimeConfig(config, flags);
+  const openaiOAuth = await hasOpenAICodexCredentials();
+  const runtime = createRuntimeConfig(config, flags, { openaiOAuth });
   const logDebug = createDebugLogger(runtime.debug);
   const logToolCommand = createToolCommandLogger(!runtime.quiet);
   applyConfiguredApiKeys(runtime, logDebug);
