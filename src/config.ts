@@ -10,7 +10,14 @@ const provider_api_keys_schema = z.record(
   z.string().min(1),
 );
 
-const provider_schema = z.enum(['gateway', 'google', 'anthropic', 'openai', 'groq']);
+const provider_schema = z.enum([
+  'gateway',
+  'google',
+  'anthropic',
+  'openai',
+  'openai-codex',
+  'groq',
+]);
 
 const prompt_files_schema = z.object({
   system: z.string().min(1).optional(),

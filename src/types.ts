@@ -47,7 +47,13 @@ export interface PendingToolApproval {
   input: unknown;
 }
 
-export type AgentProvider = 'gateway' | 'google' | 'anthropic' | 'openai' | 'groq';
+export type AgentProvider =
+  | 'gateway'
+  | 'google'
+  | 'anthropic'
+  | 'openai'
+  | 'openai-codex'
+  | 'groq';
 
 export interface AgentPromptFiles {
   system?: string;

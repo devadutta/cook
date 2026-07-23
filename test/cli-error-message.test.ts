@@ -16,6 +16,7 @@ describe('rewriteKnownErrorMessage', () => {
     const message = rewriteKnownErrorMessage(raw);
     expect(message).toContain('Set one of these API keys');
     expect(message).toContain('cook config init');
+    expect(message).toContain('cook login');
     expect(message).toContain('AI_GATEWAY_API_KEY');
     expect(message).toContain('OPENAI_API_KEY');
     expect(message).toContain('ANTHROPIC_API_KEY');

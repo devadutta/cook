@@ -79,7 +79,10 @@ cook /create-pr
 # install
 curl --proto '=https' --tlsv1.2 -LsSf https://raw.githubusercontent.com/devadutta/cook/main/install.sh | sh
 
-# set any provider key (pick one)
+# use your ChatGPT subscription
+cook login
+
+# or set any provider API key (pick one)
 export ANTHROPIC_API_KEY="sk-..."
 export OPENAI_API_KEY="sk-..."
 export GOOGLE_GENERATIVE_AI_API_KEY="..."
@@ -88,7 +91,7 @@ export GOOGLE_GENERATIVE_AI_API_KEY="..."
 cook "explain what this project does"
 ```
 
-cook auto-detects which API key you have and picks a sensible model. No config file required.
+cook auto-detects your saved ChatGPT login or API key and picks a sensible model. No config file required.
 
 ---
 
@@ -191,19 +194,56 @@ Enable per-agent with `raw_bash_output: true` in config, or per-run with `--raw`
 
 ## Providers & Models
 
-cook works with multiple AI providers. Set the appropriate API key and cook picks the right one automatically.
+cook works with multiple AI providers. Sign in with ChatGPT or set the appropriate API key, and cook picks the right one automatically.
 
-| Provider | Environment Variable | Default Model |
-|----------|---------------------|---------------|
+| Provider | Authentication | Default Model |
+|----------|----------------|---------------|
 | Vercel AI Gateway | `AI_GATEWAY_API_KEY` | `google/gemini-3-flash-preview` |
-| OpenAI | `OPENAI_API_KEY` | `gpt-5.2` |
+| OpenAI API | `OPENAI_API_KEY` | `gpt-5.2` |
+| OpenAI ChatGPT | `cook login` | `gpt-5.6-sol` |
 | Anthropic | `ANTHROPIC_API_KEY` | `claude-sonnet-4-6` |
 | Google | `GOOGLE_GENERATIVE_AI_API_KEY` | `gemini-3-flash-preview` |
 | Groq | `GROQ_API_KEY` | `moonshotai/kimi-k2-instruct-0905` |
 
-**Auto-selection precedence** (when using the default agent): Gateway → OpenAI → Anthropic → Google → Groq.
+**Auto-selection precedence** (when using the default agent): Gateway → OpenAI API key → OpenAI ChatGPT login → Anthropic → Google → Groq.
 
 You can also store keys in the config file instead of environment variables — see [Example Config](#example-config).
+
+### Sign in with ChatGPT
+
+```bash
+# browser OAuth with PKCE
+cook login
+
+# for SSH, containers, or other headless environments
+cook login --device-code
+
+# inspect or remove Cook's saved login
+cook login status
+cook logout
+```
+
+This uses OpenAI's ChatGPT OAuth flow and Codex Responses endpoint, so usage counts against the signed-in account's ChatGPT plan rather than API billing. Availability and limits depend on the account's plan and workspace policy. See OpenAI's [Codex authentication documentation](https://learn.chatgpt.com/docs/auth).
+
+Cook stores the access and refresh tokens in `~/.cook/auth.json` with owner-only permissions (`0600`) and refreshes access automatically. Treat that file like a password. `cook logout` removes it.
+
+To pin subscription-backed OpenAI models, configure `openai-codex` agents:
+
+```json
+{
+  "default_agent": "openai",
+  "agents": {
+    "openai": {
+      "provider": "openai-codex",
+      "model": "gpt-5.6-sol"
+    },
+    "openai-fast": {
+      "provider": "openai-codex",
+      "model": "gpt-5.6-luna"
+    }
+  }
+}
+```
 
 ---
 
@@ -304,7 +344,7 @@ cook config init --global --local --force
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `provider` | auto | One of: `gateway`, `openai`, `anthropic`, `google`, `groq` |
+| `provider` | auto | One of: `gateway`, `openai`, `openai-codex`, `anthropic`, `google`, `groq` |
 | `model` | auto | Model identifier for the provider |
 | `raw_bash_output` | `false` | Enable raw terminal output mode |
 | `prompt_files.system` | — | Custom system prompt file |
@@ -353,6 +393,9 @@ This creates a `session.html` file you can open in any browser.
 ```
 cook [options] <instruction>
 cook config init [--global] [--local] [--force]
+cook login [openai] [--device-code] [--no-browser]
+cook login status
+cook logout [openai]
 cook /alias-name
 ```
 

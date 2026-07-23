@@ -38,6 +38,17 @@ export function parseCli(argv: string[]): { instruction: string; flags: CliFlags
     .option('--allow-outside-cwd', 'Allow file/tool operations outside current working directory')
     .option('--dry-run', 'Preview mutating actions but do not execute them')
     .option('--raw', 'Enable raw Bash terminal output mode (allows isFinal)')
+    .addHelpText(
+      'after',
+      [
+        '',
+        'Commands:',
+        '  cook login [openai] [--device-code]  Sign in with ChatGPT',
+        '  cook login status                    Show ChatGPT login status',
+        '  cook logout [openai]                 Remove the saved ChatGPT login',
+        '  cook config init                     Initialize configuration',
+      ].join('\n'),
+    )
     .showHelpAfterError();
 
   program.parse(argv);
