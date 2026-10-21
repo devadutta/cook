@@ -227,6 +227,8 @@
   .t-input { color: var(--green); }
   .t-dim { color: var(--text-muted); }
   .t-result { color: var(--text-dim); }
+  .t-bold { color: var(--text); font-weight: 600; }
+  .t-screen { white-space: pre; word-break: normal; }
 
   .cursor-blink {
     display: inline-block;
@@ -644,47 +646,165 @@ function copyInstall(el) {
 }
 
 // ---- TERMINAL SIMULATION ----
+// Setup-screen frames replay cook's TUI. Lines use {class:text} markup:
+// d dim, c cyan, g green, y yellow, b bold, cur cursor.
+const RULE = '{d:' + '─'.repeat(74) + '}';
+const CUR = '{cur:}';
+const PICKED = 'anthropic/claude-opus-5.5';
+const SAVED_MODEL = `{g:✓} default → gateway · ${PICKED} {d:→ ~/.cook/config.json}`;
+const SAVED_KEY = '{g:✓} saved ANTHROPIC_API_KEY {d:→ ~/.cook/config.json}';
+
+function tui({ model = 'google/gemini-3-flash-preview', auto = true, log = [], panel }) {
+  return [
+    ' {b:cook} {d:v0.3.1}',
+    ' {d:Set up cook with / commands, or type a task and press enter to run it.}',
+    '',
+    ' {d:agent    }default {d:(auto: first provider with credentials)}',
+    ' {d:model    }gateway · google/gemini-3-flash-preview',
+    ...log.flatMap(line => ['', line]),
+    '',
+    ...panel,
+    ` {d:default: gateway · ${model}${auto ? ' (auto)' : ''}  ·  saving to ~/.cook/config.json}`,
+  ];
+}
+
+const editor = (text, below = []) => [RULE, ` ${text}${CUR}`, RULE, ...below];
+
+const providers = selected => [
+  ' {b:Select provider}',
+  ' > ' + CUR,
+  ...[
+    ['auto', 'built-in default: first provider with credentials'],
+    ['gateway', 'Vercel AI Gateway · key in config'],
+    ['openai', 'OpenAI API · needs OPENAI_API_KEY'],
+    ['openai-codex', 'OpenAI ChatGPT login · signed in'],
+    ['anthropic', 'Anthropic · needs ANTHROPIC_API_KEY'],
+    ['google', 'Google · needs GOOGLE_GENERATIVE_AI_API_KEY'],
+    ['groq', 'Groq · needs GROQ_API_KEY'],
+  ].map(([id, note]) => id === selected
+    ? ` {c:→ ${id.padEnd(14)}${note}}`
+    : `   ${id.padEnd(14)}{d:${note}}`),
+  ' {d:type to filter · ↑↓ move · enter select · esc back}',
+];
+
+// Real Vercel AI Gateway rows, in the order cook's picker shows them.
+const MODEL_LISTS = {
+  all: { count: 307, rows: [
+    ['google/gemini-3-flash-preview', 'current · not in provider list'],
+    ['alibaba/qwen-3-14b', '41K ctx · $0.12/$0.24 per 1M'],
+    ['alibaba/qwen-3-235b', '262K ctx · $0.22/$0.88 per 1M'],
+    ['alibaba/qwen-3-30b', '41K ctx · $0.12/$0.5 per 1M'],
+  ] },
+  opus: { count: 32, rows: [
+    ['anthropic/claude-opus-4.5', '200K ctx · $5/$25 per 1M'],
+    ['anthropic/claude-opus-4.5-batch', '200K ctx · $2.5/$12.5 per 1M'],
+    ['anthropic/claude-opus-4.6', '1M ctx · $5/$25 per 1M'],
+    ['anthropic/claude-opus-4.6-batch', '1M ctx · $2.5/$12.5 per 1M'],
+  ] },
+  opus55: { count: 10, rows: [
+    ['anthropic/claude-opus-5.5', '1M ctx · $4/$20 per 1M'],
+    ['anthropic/claude-opus-5.5-fast', '1M ctx · $8/$40 per 1M'],
+    ['anthropic/claude-opus-5.5-batch', '1M ctx · $2/$10 per 1M'],
+    ['anthropic/claude-sonnet-5.5', '1M ctx · $2/$10 per 1M'],
+  ] },
+};
+
+const models = query => {
+  const { rows, count } = MODEL_LISTS[query === 'opus 5.5' ? 'opus55' : query.length >= 4 ? 'opus' : 'all'];
+  return [
+    ' {b:Select model · Vercel AI Gateway}',
+    ` > ${query}${CUR}`,
+    ...rows.map(([id, note], index) => index === 0
+      ? ` {c:→ ${id.padEnd(35)}${note}}`
+      : `   ${id.padEnd(35)}{d:${note}}`),
+    // the picker shows 10 rows and only counts when there are more
+    ...(count > 10 ? [`   {d:(1/${count})}`] : []),
+    ' {d:type to filter or enter any id · ↑↓ move · enter select · esc back}',
+  ];
+};
+
+const keys = anthropic => [
+  ' {b:API keys}',
+  ...[
+    ['Vercel AI Gateway API key', 'config sk-…9c2e'],
+    ['OpenAI API key', 'not set'],
+    ['Anthropic API key', anthropic],
+    ['Google API key', 'not set'],
+    ['Groq API key', 'not set'],
+  ].map(([label, value], index) => index === 2
+    ? ` {c:→ ${label.padEnd(25)}  ${value}}`
+    : `   ${label.padEnd(25)}  {d:${value}}`),
+  '',
+  '   {d:ANTHROPIC_API_KEY. A saved key overrides the environment variable;}',
+  '   {d:submit empty to remove it.}',
+  '',
+  '   {d:Enter/Space to change · Esc to cancel}',
+];
+
+const picked = { model: PICKED, auto: false };
+
 const sequences = [
   // Sequence 1: commit and push
   [
     { type: 'prompt', text: '$ cook commit and push' },
     { type: 'blank' },
-    { type: 'cook', text: '[cook] chef' },
-    { type: 'bash', text: '[bash] git status' },
-    { type: 'bash', text: '[bash] git diff README.md' },
+    { type: 'cook', text: '[cook] default' },
+    { type: 'bash', text: '[bash] git status --short' },
+    { type: 'bash', text: '[bash] git diff --stat' },
     { type: 'blank' },
     { type: 'mutate', text: '[cook] Mutating action' },
     { type: 'mutate', text: '[cook] [bash] git add README.md' },
-    { type: 'input', text: '[cook] Proceed? [y/N/a] y' },
+    { type: 'input', text: '[cook] Proceed? [y/N/a] or tell cook what to do: ', answer: 'a' },
     { type: 'bash', text: '[bash] git add README.md' },
-    { type: 'blank' },
-    { type: 'mutate', text: '[cook] Mutating action' },
-    { type: 'mutate', text: '[cook] [bash] git commit -m "docs: improve README"' },
-    { type: 'input', text: '[cook] Proceed? [y/N/a] y' },
     { type: 'bash', text: '[bash] git commit -m "docs: improve README"' },
-    { type: 'blank' },
-    { type: 'mutate', text: '[cook] Mutating action' },
-    { type: 'mutate', text: '[cook] [bash] git push' },
-    { type: 'input', text: '[cook] Proceed? [y/N/a] y' },
     { type: 'bash', text: '[bash] git push' },
     { type: 'blank' },
-    { type: 'result', text: 'committed and pushed to origin/main.' },
+    { type: 'result', text: 'Committed README.md and pushed to origin/main.' },
   ],
-  // Sequence 2: piped input
+  // Sequence 2: interactive setup
+  [
+    { type: 'prompt', text: '$ cook' },
+    { type: 'mark' },
+    { type: 'screen', lines: tui({ panel: editor('') }), wait: 700 },
+    { type: 'typescreen', text: '/mo', frame: text => tui({ panel: editor(text, [' {c:→ model       choose provider and model, or set them directly}']) }) },
+    { type: 'screen', lines: tui({ panel: providers('gateway') }), wait: 900 },
+    { type: 'screen', lines: tui({ panel: models('') }), wait: 1100 },
+    { type: 'typescreen', text: 'opus 5.5', frame: text => tui({ panel: models(text) }) },
+    { type: 'screen', lines: tui({ ...picked, log: [SAVED_MODEL], panel: editor('') }), wait: 900 },
+    { type: 'typescreen', text: '/keys', frame: text => tui({ ...picked, log: [SAVED_MODEL], panel: editor(text) }) },
+    { type: 'screen', lines: tui({ ...picked, log: [SAVED_MODEL], panel: keys('not set') }), wait: 900 },
+    {
+      type: 'typescreen',
+      text: '••••••••••••••••••••••••',
+      speed: 18,
+      frame: dots => tui({
+        ...picked,
+        log: [SAVED_MODEL],
+        panel: [
+          ' {b:API keys}',
+          ' {b:ANTHROPIC_API_KEY → ~/.cook/config.json}',
+          ` > ${dots}${CUR}`,
+          ' {d:paste the key · empty removes it · enter to save · esc to cancel}',
+        ],
+      }),
+    },
+    { type: 'screen', lines: tui({ ...picked, log: [SAVED_MODEL, SAVED_KEY], panel: keys('config sk-…f3a9') }) },
+  ],
+  // Sequence 3: piped input
   [
     { type: 'prompt', text: '$ cat errors.log | cook "find the root cause"' },
     { type: 'blank' },
-    { type: 'cook', text: '[cook] chef' },
-    { type: 'bash', text: '[bash] wc -l /tmp/cook-stdin-7f3a.tmp' },
-    { type: 'bash', text: '[bash] grep -n "ERROR\\|FATAL" /tmp/cook-stdin-7f3a.tmp' },
-    { type: 'bash', text: '[bash] grep -B5 "connection refused" /tmp/cook-stdin-7f3a.tmp' },
+    { type: 'cook', text: '[cook] default' },
+    { type: 'bash', text: '[bash] wc -l /tmp/cook-stdin-7f3a.txt' },
+    { type: 'bash', text: '[bash] grep -n "ERROR\\|FATAL" /tmp/cook-stdin-7f3a.txt' },
+    { type: 'bash', text: '[bash] grep -B5 "connection refused" /tmp/cook-stdin-7f3a.txt' },
     { type: 'blank' },
     { type: 'result', text: 'Root cause: Redis connection pool exhausted at' },
     { type: 'result', text: '03:14:22 UTC. The pool limit (10) was hit after' },
     { type: 'result', text: 'a retry storm from the payment service. All 502s' },
     { type: 'result', text: 'trace back to this single point of failure.' },
   ],
-  // Sequence 3: quick task
+  // Sequence 4: quick task
   [
     { type: 'prompt', text: '$ cook --agent fast "list exported functions in src/"' },
     { type: 'blank' },
@@ -699,17 +819,16 @@ const sequences = [
     { type: 'result', text: '  prompt.ts   — composePrompt' },
     { type: 'result', text: '  session.ts  — startSession' },
   ],
-  // Sequence 4: dry run
+  // Sequence 5: dry run
   [
     { type: 'prompt', text: '$ cook --dry-run "rename all .jsx files to .tsx"' },
     { type: 'blank' },
-    { type: 'cook', text: '[cook] chef (dry-run)' },
+    { type: 'cook', text: '[cook] default' },
     { type: 'bash', text: '[bash] find src/ -name "*.jsx"' },
-    { type: 'blank' },
-    { type: 'mutate', text: '[cook] Would execute:' },
-    { type: 'mutate', text: '[cook] [bash] mv src/App.jsx src/App.tsx' },
-    { type: 'mutate', text: '[cook] [bash] mv src/Header.jsx src/Header.tsx' },
-    { type: 'mutate', text: '[cook] [bash] mv src/Footer.jsx src/Footer.tsx' },
+    { type: 'cook', text: 'Dry-run planned mutating actions:' },
+    { type: 'mutate', text: '  1. Bash: mv src/App.jsx src/App.tsx' },
+    { type: 'mutate', text: '  2. Bash: mv src/Header.jsx src/Header.tsx' },
+    { type: 'mutate', text: '  3. Bash: mv src/Footer.jsx src/Footer.tsx' },
     { type: 'blank' },
     { type: 'result', text: '3 files would be renamed. Run without' },
     { type: 'result', text: '--dry-run to execute.' },
@@ -724,6 +843,14 @@ const typeClasses = {
   input: 't-input',
   result: 't-result',
   blank: '',
+};
+
+const markupClasses = {
+  d: 't-bash',
+  c: 't-cook',
+  g: 't-input',
+  y: 't-mutate',
+  b: 't-bold',
 };
 
 const body = document.getElementById('terminal-body');
@@ -745,10 +872,52 @@ async function typeText(el, text, speed) {
   }
 }
 
+function markupToHtml(markup) {
+  const escaped = markup.replace(/[&<>]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[ch]);
+  return escaped.replace(/\{(\w+):([^{}]*)\}/g, (_, cls, text) => cls === 'cur'
+    ? '<span class="cursor-blink"></span>'
+    : `<span class="${markupClasses[cls] || ''}">${text}</span>`);
+}
+
+// Redraws everything after the mark, like a full-screen terminal app.
+function showScreen(mark, lines) {
+  while (body.children.length > mark) body.lastChild.remove();
+  for (const line of lines) {
+    const el = document.createElement('div');
+    el.className = 'terminal-line visible t-screen';
+    el.innerHTML = markupToHtml(line) || ' ';
+    body.appendChild(el);
+  }
+  body.scrollTop = body.scrollHeight;
+}
+
 async function playSequence(seq) {
   clearTerminal();
+  let mark = 0;
   for (let i = 0; i < seq.length; i++) {
     const line = seq[i];
+
+    if (line.type === 'mark') {
+      mark = body.children.length;
+      continue;
+    }
+
+    if (line.type === 'screen') {
+      showScreen(mark, line.lines);
+      await sleep(line.wait ?? 600);
+      continue;
+    }
+
+    if (line.type === 'typescreen') {
+      const chars = [...line.text];
+      for (let n = 0; n <= chars.length; n++) {
+        showScreen(mark, line.frame(chars.slice(0, n).join('')));
+        await sleep(line.speed ?? 90);
+      }
+      await sleep(450);
+      continue;
+    }
+
     const el = document.createElement('div');
     el.className = 'terminal-line';
 
@@ -768,14 +937,11 @@ async function playSequence(seq) {
       await typeText(el, line.text, 28);
       await sleep(400);
     } else if (line.type === 'input') {
-      // show the prompt part, then "type" the answer
-      const parts = line.text.split('] ');
-      const promptPart = parts.slice(0, -1).join('] ') + '] ';
-      const answer = parts[parts.length - 1];
-      el.textContent = promptPart;
+      // show the prompt, then the answer
+      el.textContent = line.text;
+      await sleep(700);
+      el.textContent = line.text + line.answer;
       await sleep(300);
-      await typeText(el, promptPart + answer, 40);
-      await sleep(200);
     } else {
       el.textContent = line.text;
       await sleep(line.type === 'result' ? 60 : 120);
@@ -784,6 +950,9 @@ async function playSequence(seq) {
     // auto-scroll
     body.scrollTop = body.scrollHeight;
   }
+
+  // a setup screen stays up; shell sessions end at a fresh prompt
+  if (seq.some(line => line.type === 'screen')) return;
 
   // blinking cursor at the end
   const cursorLine = document.createElement('div');
