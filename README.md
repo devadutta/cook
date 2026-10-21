@@ -171,41 +171,51 @@ Agents are defined in your config file — see [Configuration](#configuration). 
 
 A decision agent skips the tool loop. It sends your input straight to a System 1 decision model, such as TypeSafe's Jev, and prints an answer for each question. A choice question gets the chosen option and its probability. A score question gets a score out of the top level, and a yes/no question gets the probability of yes. Decision agents run on the Vercel AI Gateway, so they need `AI_GATEWAY_API_KEY`.
 
-Give the agent its questions in config, then pass it the state to judge, as text or JSON, as an argument or on stdin:
-
 ```json
 {
   "agents": {
-    "triage": {
-      "type": "decision",
-      "provider": "gateway",
-      "model": "typesafe-ai/jev",
-      "questions": {
-        "team": { "type": "choice", "instructions": "Which team should handle this", "criteria": { "billing": "Invoices, refunds", "technical": "Bugs, outages" } },
-        "severity": { "type": "score", "instructions": "How severe the problem sounds", "criteria": ["Minor", "Moderate", "Critical"] },
-        "urgent": { "type": "boolean", "instructions": "The customer conveys urgency" }
-      }
+    "decide": { "type": "decision", "provider": "gateway", "model": "typesafe-ai/jev" }
+  }
+}
+```
+
+Keep reusable question sets as JSON files in `.cook/questions/` (in the project) or `~/.cook/questions/`, and start the input with `@name` to load one. The rest of the input is what gets judged. Here is `~/.cook/questions/asset-kind.json`:
+
+```json
+{
+  "kind": {
+    "type": "choice",
+    "instructions": "What kind of asset this ticker or symbol is",
+    "criteria": {
+      "stock": "Shares of a single company",
+      "etf": "An exchange-traded fund that holds a basket of assets",
+      "index": "A market index that tracks prices and cannot be bought directly",
+      "crypto": "A cryptocurrency or token"
     }
   }
 }
 ```
 
 ```bash
-cook --agent triage "Our nightly export failed three times and the board meets in an hour"
-# team: technical (1.00)
-# severity: 1.97/2
-# urgent: 0.99
-
-cat ticket.json | cook --agent triage --json   # model, answers with probabilities, and token usage
+cook --agent decide @asset-kind SPY          # kind: etf (1.00)
+echo BTC | cook --agent decide @asset-kind   # the state can come from stdin
+cook --agent decide @asset-kind @risk "…"    # combine question files
+cook --agent decide --json @asset-kind AAPL  # model, every probability, and token usage
 ```
 
-You can also send a whole request instead: a JSON object with `questions` (and optionally `state`) replaces the agent's questions. Images work as state too, if the model takes them. Pipe one in (PNG, JPEG, GIF, or WebP), or pass AI SDK `file` parts:
+For a one-off question, pass a whole request instead: a JSON object with `questions` and `state`.
 
 ```bash
-cook --agent triage '{"questions": {"damaged": {"type": "boolean", "instructions": "The package looks damaged"}}}' < photo.jpg
+cook --agent decide '{"state": "SPY", "questions": {"is_fund": {"type": "boolean", "instructions": "This ticker is a fund"}}}'
 ```
 
-Questions follow the AI SDK's decision format: `choice` (with `criteria` naming the options), `score` (with `criteria` listing the levels, lowest first), and `boolean`. Every question needs `instructions`. `/new-agent` in the [interactive setup](#interactive-setup) can create a decision agent and lists the gateway's decision models.
+The state can be text, JSON, or an image, if the model takes images. Pipe in a PNG, JPEG, GIF, or WebP, or pass AI SDK `file` parts:
+
+```bash
+cook --agent decide @damage < photo.jpg
+```
+
+Questions follow the AI SDK's decision format: `choice` (with `criteria` naming the options), `score` (with `criteria` listing the levels, lowest first), and `boolean`. Every question needs `instructions`. An agent can also carry fixed `questions` in its config; a question file or a request replaces them for that run. `/new-agent` in the [interactive setup](#interactive-setup) can create a decision agent and lists the gateway's decision models.
 
 ### Output Modes
 
@@ -447,7 +457,7 @@ cook config init --global --local --force
 | `prompt_files.system` | — | Custom system prompt file |
 | `prompt_files.system_append` | — | Additional prompt files appended in order |
 | `ignore_agents_md` | `false` | Skip `AGENTS.md` and `CLAUDE.md` context files |
-| `questions` | — | Decision agents only: the questions to answer about each input |
+| `questions` | — | Decision agents only: default questions, used when the input doesn't name a [question file](#decision-agents) |
 
 ### System Prompt Composition
 

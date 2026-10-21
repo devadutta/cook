@@ -9,6 +9,7 @@ import {
   formatDecisionAnswers,
   resolveDecisionRequest,
   runDecision,
+  splitQuestionRefs,
 } from '../src/decision.ts';
 import type { RuntimeConfig, StdinContext } from '../src/types.ts';
 
@@ -63,7 +64,7 @@ function decisionRuntime(overrides: Partial<RuntimeConfig['agent']> = {}): Runti
 describe('resolveDecisionRequest', () => {
   it('judges argument text against the agent questions', async () => {
     const request = await resolveDecisionRequest({ instruction: 'export failed', stdin: NO_STDIN, questions: QUESTIONS });
-    expect(request).toEqual({ state: 'export failed', questions: QUESTIONS });
+    expect(request).toEqual({ state: 'export failed', questions: QUESTIONS, questionFiles: [] });
   });
 
   it('sends a JSON object as JSON state', async () => {
@@ -78,7 +79,7 @@ describe('resolveDecisionRequest', () => {
   it('reads a whole request from stdin', async () => {
     const stdin = textStdin(JSON.stringify({ state: 'hi', questions: { urgent: URGENT } }));
     const request = await resolveDecisionRequest({ instruction: '', stdin });
-    expect(request).toEqual({ state: 'hi', questions: { urgent: URGENT } });
+    expect(request).toEqual({ state: 'hi', questions: { urgent: URGENT }, questionFiles: [] });
   });
 
   it('takes questions from the argument and state from stdin', async () => {
@@ -86,7 +87,7 @@ describe('resolveDecisionRequest', () => {
       instruction: JSON.stringify({ questions: { urgent: URGENT } }),
       stdin: textStdin('server down'),
     });
-    expect(request).toEqual({ state: 'server down', questions: { urgent: URGENT } });
+    expect(request).toEqual({ state: 'server down', questions: { urgent: URGENT }, questionFiles: [] });
   });
 
   it('combines argument text with an image on stdin', async () => {
@@ -123,6 +124,59 @@ describe('resolveDecisionRequest', () => {
       stdin: await binaryStdin(new Uint8Array([1, 2, 3, 4])),
       questions: QUESTIONS,
     })).rejects.toThrow('PNG, JPEG, GIF or WebP');
+  });
+});
+
+describe('question files', () => {
+  const KIND = {
+    kind: {
+      type: 'choice',
+      instructions: 'What kind of asset this is',
+      criteria: { stock: 'One company', etf: 'A fund', index: 'An index', crypto: 'A token' },
+    },
+  } as const;
+
+  async function questionDirs(): Promise<{ cwd: string; homeDir: string }> {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'cook-questions-test-'));
+    const cwd = path.join(root, 'project');
+    const homeDir = path.join(root, 'home');
+    await Bun.write(path.join(homeDir, '.cook', 'questions', 'asset-kind.json'), JSON.stringify(KIND));
+    await Bun.write(path.join(homeDir, '.cook', 'questions', 'urgent.json'), JSON.stringify({ urgent: URGENT }));
+    return { cwd, homeDir };
+  }
+
+  it('splits leading @names off the input', () => {
+    expect(splitQuestionRefs('@asset-kind SPY')).toEqual({ names: ['asset-kind'], rest: 'SPY' });
+    expect(splitQuestionRefs('@a @b.json  is it up?')).toEqual({ names: ['a', 'b'], rest: 'is it up?' });
+    expect(splitQuestionRefs('email me@example.com')).toEqual({ names: [], rest: 'email me@example.com' });
+    expect(splitQuestionRefs('@kind')).toEqual({ names: ['kind'], rest: '' });
+  });
+
+  it('judges the rest of the input against the named file', async () => {
+    const dirs = await questionDirs();
+    const request = await resolveDecisionRequest({ instruction: '@asset-kind SPY', stdin: NO_STDIN, questions: QUESTIONS, ...dirs });
+    expect(request.state).toBe('SPY');
+    expect(request.questions).toEqual(KIND);
+    expect(request.questionFiles).toEqual([path.join(dirs.homeDir, '.cook', 'questions', 'asset-kind.json')]);
+  });
+
+  it('prefers the project folder, combines files, and reads state from stdin', async () => {
+    const dirs = await questionDirs();
+    await Bun.write(path.join(dirs.cwd, '.cook', 'questions', 'urgent.json'), JSON.stringify({ hot: URGENT }));
+    const request = await resolveDecisionRequest({ instruction: '@asset-kind @urgent', stdin: textStdin('BTC'), ...dirs });
+    expect(request.state).toBe('BTC');
+    expect(Object.keys(request.questions)).toEqual(['kind', 'hot']);
+  });
+
+  it('explains missing, invalid, and clashing files', async () => {
+    const dirs = await questionDirs();
+    const resolve = (instruction: string) => resolveDecisionRequest({ instruction, stdin: NO_STDIN, ...dirs });
+    await expect(resolve('@kinds SPY')).rejects.toThrow('Available: @asset-kind, @urgent.');
+    await Bun.write(path.join(dirs.cwd, '.cook', 'questions', 'bad.json'), '{"x": {"type": "boolean"}}');
+    await expect(resolve('@bad SPY')).rejects.toThrow('bad.json: x.instructions: required');
+    await Bun.write(path.join(dirs.cwd, '.cook', 'questions', 'broken.json'), '{');
+    await expect(resolve('@broken SPY')).rejects.toThrow('broken.json is not valid JSON');
+    await expect(resolve('@urgent @urgent SPY')).rejects.toThrow('Question "urgent" is defined in more than one');
   });
 });
 
