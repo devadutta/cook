@@ -59,6 +59,8 @@ cook /create-pr
   - [Output Modes](#output-modes)
   - [Raw Terminal Mode](#raw-terminal-mode)
 - [Providers & Models](#providers--models)
+  - [Sign in with ChatGPT](#sign-in-with-chatgpt)
+  - [Thinking & Fast Mode](#thinking--fast-mode)
 - [Safety](#safety)
 - [Configuration](#configuration)
   - [Interactive Setup](#interactive-setup)
@@ -162,7 +164,7 @@ cook "summarize this repo"
 cook --agent fast "what does main.ts export?"
 ```
 
-Agents are defined in your config file — see [Configuration](#configuration).
+Agents are defined in your config file — see [Configuration](#configuration). In the [interactive setup](#interactive-setup), `/new-agent` creates one without changing your default, and `/delete-agent` removes one.
 
 ### Output Modes
 
@@ -228,7 +230,7 @@ This uses OpenAI's ChatGPT OAuth flow and Codex Responses endpoint, so usage cou
 
 Cook stores the access and refresh tokens in `~/.cook/auth.json` with owner-only permissions (`0600`) and refreshes access automatically. Treat that file like a password. `cook logout` removes it.
 
-To pin subscription-backed OpenAI models, configure `openai-codex` agents:
+`/model openai-codex` lists the models your ChatGPT plan offers. To pin subscription-backed OpenAI models, configure `openai-codex` agents:
 
 ```json
 {
@@ -242,6 +244,34 @@ To pin subscription-backed OpenAI models, configure `openai-codex` agents:
       "provider": "openai-codex",
       "model": "gpt-5.6-luna"
     }
+  }
+}
+```
+
+### Thinking & Fast Mode
+
+Set `thinking` on an agent, or pass `--thinking <level>`, to choose how much the model reasons: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. Leave it unset to use the provider's default. cook turns the level into each provider's own setting, capped at the highest level the provider has:
+
+| Provider | What cook sends |
+|----------|-----------------|
+| OpenAI API, ChatGPT login | Reasoning effort (`off` → `none`) |
+| Anthropic | Adaptive thinking at that effort (`minimal` → `low`); `off` disables thinking |
+| Google | Gemini 3: thinking level (`off` → `minimal`, `xhigh` and `max` → `high`). Gemini 2.x: a thinking token budget |
+| Groq | Reasoning effort (`off` → `none`, `minimal` → `low`, `xhigh` and `max` → `high`) |
+| Vercel AI Gateway | The setting above, for `openai/`, `anthropic/`, and `google/` models |
+
+Models accept different ranges, so a level a model doesn't support comes back as the provider's error. For example, Claude Opus 5.5 can't turn thinking off, and ChatGPT models start at `low`.
+
+Set `fast: true`, or pass `--fast`, for faster responses at a higher price. Other providers ignore it.
+
+- **OpenAI API and ChatGPT login:** the priority service tier ("Fast" in Codex). On ChatGPT it uses more of your plan.
+- **Anthropic:** fast mode, available for Claude Opus 5.5, Opus 5, and Opus 4.8 through the Anthropic API at premium pricing.
+
+```json
+{
+  "agents": {
+    "deep": { "provider": "anthropic", "model": "claude-opus-5-5", "thinking": "max" },
+    "quick": { "provider": "openai-codex", "model": "gpt-6-luna", "thinking": "low", "fast": true }
   }
 }
 ```
@@ -288,8 +318,12 @@ Run `cook` with no arguments to open an interactive setup screen. Type `/` to se
 | Command | What it does |
 |---------|--------------|
 | `/model [provider] [id]` | Pick a provider, then a model from its live list (with context size and pricing for the Vercel AI Gateway). `/model groq` jumps straight to Groq's models |
+| `/thinking [level]` | Set the thinking level for the current agent, with what it means for that provider |
+| `/fast [on\|off]` | Toggle fast mode for the current agent (OpenAI and Anthropic) |
 | `/agent [name]` | Switch the default agent, or create a new one from the current agent |
-| `/settings` | Model, API keys, steps, timeouts, confirmations, prompt files, and the other config options |
+| `/new-agent [name]` | Create an agent: pick its model, thinking level, and fast mode. Your default stays the same |
+| `/delete-agent [name]` | Remove an agent from the config file you're saving to, after you confirm. The default agent can't be deleted until you pick another |
+| `/settings` | Model, thinking, fast mode, API keys, steps, timeouts, confirmations, prompt files, and the other config options |
 | `/keys` | Just the provider API keys (input is masked) |
 | `/scope [global\|local]` | Choose whether changes go to `~/.cook/config.json` (default) or `./.cook/config.json` |
 | `/config` | Show the merged config, with keys masked |
@@ -297,7 +331,7 @@ Run `cook` with no arguments to open an interactive setup screen. Type `/` to se
 
 Anything that isn't a command runs as a normal cook task, and so do your [command aliases](#command-aliases). The setup screen loads only when `cook` runs without arguments, so `cook <instruction>` starts as fast as before.
 
-Model lists for OpenAI, Anthropic, Google, and Groq need that provider's API key. Without one, type any model id.
+Model lists for OpenAI, Anthropic, Google, and Groq need that provider's API key, and the ChatGPT list needs `/login`. Without them, type any model id.
 
 ### Config Precedence
 
@@ -365,6 +399,8 @@ cook config init --global --local --force
 |--------|---------|-------------|
 | `provider` | auto | One of: `gateway`, `openai`, `openai-codex`, `anthropic`, `google`, `groq` |
 | `model` | auto | Model identifier for the provider |
+| `thinking` | provider default | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max` — see [Thinking & Fast Mode](#thinking--fast-mode) |
+| `fast` | `false` | Fast mode for OpenAI and Anthropic agents |
 | `raw_bash_output` | `false` | Enable raw terminal output mode |
 | `prompt_files.system` | — | Custom system prompt file |
 | `prompt_files.system_append` | — | Additional prompt files appended in order |
@@ -431,6 +467,8 @@ cook /alias-name
 | `--allow-outside-cwd` | Allow file access outside working directory |
 | `--dry-run` | Preview mutations without executing |
 | `--raw` | Enable raw bash terminal output |
+| `--thinking <level>` | Override the agent's thinking level |
+| `--fast` | Use fast mode for this run |
 | `-V`, `--version` | Print version and exit |
 
 ---

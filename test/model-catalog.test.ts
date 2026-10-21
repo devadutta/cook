@@ -6,6 +6,7 @@ import {
   parseGatewayModels,
   parseGoogleModels,
   parseGroqModels,
+  parseOpenAICodexModels,
   parseOpenAIModels,
 } from '../src/model-catalog.ts';
 import { PORTABLE_DEFAULT_PRECEDENCE } from '../src/portable-default.ts';
@@ -80,6 +81,21 @@ describe('model catalog', () => {
     })).toEqual([{ id: 'moonshotai/kimi-k2-instruct-0905', description: '262K ctx · Moonshot AI' }]);
   });
 
+  it('keeps the ChatGPT models Codex lists, in its order', () => {
+    expect(parseOpenAICodexModels({
+      models: [
+        { slug: 'gpt-5.6-sol', visibility: 'list', priority: 6, context_window: 272_000, description: 'Older generation workhorse model.' },
+        { slug: 'codex-auto-review', visibility: 'hide', priority: 43 },
+        { slug: 'gpt-6.1-sol', visibility: 'list', priority: 1, context_window: 500_000, description: 'Latest workhorse model.' },
+        { slug: 'gpt-unranked', visibility: 'list' },
+      ],
+    })).toEqual([
+      { id: 'gpt-6.1-sol', description: '500K ctx · Latest workhorse model' },
+      { id: 'gpt-5.6-sol', description: '272K ctx · Older generation workhorse model' },
+      { id: 'gpt-unranked', description: undefined },
+    ]);
+  });
+
   it('tolerates unexpected response shapes', () => {
     expect(parseGatewayModels(null)).toEqual([]);
     expect(parseOpenAIModels({ data: 'nope' })).toEqual([]);
@@ -119,7 +135,7 @@ describe('model catalog', () => {
     expect(requests[1]?.headers.get('authorization')).toBe('Bearer groq-key');
   });
 
-  it('lists gateway models without a key and has no list for ChatGPT login', async () => {
+  it('lists gateway models without a key', async () => {
     const fetch = async (url: string) => {
       expect(url).toBe('https://ai-gateway.vercel.sh/v1/models');
       return new Response('{"data":[{"id":"openai/gpt-5","type":"language"}]}');
@@ -127,6 +143,22 @@ describe('model catalog', () => {
     expect(await fetchProviderModels('gateway', { fetch })).toEqual([
       { id: 'openai/gpt-5', description: undefined },
     ]);
-    expect(await fetchProviderModels('openai-codex', { fetch })).toEqual([]);
+  });
+
+  it('lists ChatGPT models for every client version through the login fetch', async () => {
+    const urls: string[] = [];
+    const fetch = async (url: string) => {
+      urls.push(url);
+      return urls.length === 1
+        ? new Response('{"models":[{"slug":"gpt-6.1-sol","visibility":"list"}]}')
+        : new Response('expired', { status: 401 });
+    };
+    expect(await fetchProviderModels('openai-codex', { fetch })).toEqual([
+      { id: 'gpt-6.1-sol', description: undefined },
+    ]);
+    expect(new URL(urls[0]!).searchParams.get('client_version')).toBe('9999.0.0');
+    await expect(fetchProviderModels('openai-codex', { fetch })).rejects.toThrow(
+      'The ChatGPT login was rejected (HTTP 401)',
+    );
   });
 });

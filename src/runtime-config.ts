@@ -69,6 +69,8 @@ function resolveRuntimeAgent(
   return {
     ...resolvedAgent,
     raw_bash_output: Boolean(flags.raw || resolvedAgent.raw_bash_output),
+    thinking: flags.thinking ?? resolvedAgent.thinking,
+    fast: Boolean(flags.fast || resolvedAgent.fast),
   };
 }
 

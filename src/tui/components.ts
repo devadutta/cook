@@ -280,7 +280,7 @@ export class ModelSelector implements Component, Focusable {
       },
       (error: unknown) => {
         const message = error instanceof Error ? error.message : String(error);
-        picker.setStatus(`${message}. Type any model id.`);
+        picker.setStatus(`${message.replace(/\.$/, '')}. Type any model id.`);
       },
     ).finally(options.requestRender);
   }

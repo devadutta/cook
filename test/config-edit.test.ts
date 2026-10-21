@@ -10,6 +10,7 @@ import {
   withAgentOption,
   withApiKey,
   withDefaultAgent,
+  withNewAgent,
   withOption,
   withoutAgent,
 } from '../src/config-edit.ts';
@@ -116,6 +117,34 @@ describe('config edits', () => {
   });
 });
 
+describe('agent profiles', () => {
+  it('creates an agent without touching the default', () => {
+    const file = { default_agent: 'chef', agents: { chef: { provider: 'gateway' as const, model: 'openai/gpt-5' } } };
+    expect(withNewAgent(file, 'deep', {
+      provider: 'anthropic',
+      model: 'claude-opus-5-5',
+      thinking: 'max',
+      fast: false,
+    })).toEqual({
+      default_agent: 'chef',
+      agents: {
+        chef: { provider: 'gateway', model: 'openai/gpt-5' },
+        deep: { provider: 'anthropic', model: 'claude-opus-5-5', thinking: 'max' },
+      },
+    });
+  });
+
+  it('keeps thinking and fast mode when copying the effective agent', () => {
+    const effective: AgentConfig = { provider: 'openai-codex', model: 'gpt-6-astra', thinking: 'high', fast: true };
+    expect(withAgentOption({}, 'quick', effective, 'thinking', 'low')).toEqual({
+      agents: { quick: { provider: 'openai-codex', model: 'gpt-6-astra', thinking: 'low', fast: true } },
+    });
+    expect(withAgentOption({ agents: { quick: effective } }, 'quick', effective, 'fast', undefined)).toEqual({
+      agents: { quick: { provider: 'openai-codex', model: 'gpt-6-astra', thinking: 'high' } },
+    });
+  });
+});
+
 describe('updateConfigFile', () => {
   it('creates the file with owner-only permissions', async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), 'cook-config-edit-'));
@@ -136,5 +165,13 @@ describe('updateConfigFile', () => {
       'max_steps',
     );
     expect(await Bun.file(filePath).text()).toBe('{\n  "max_steps": 10\n}\n');
+  });
+
+  it('rejects unknown thinking levels', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'cook-config-edit-'));
+    const filePath = path.join(dir, 'config.json');
+    const agent = { provider: 'openai', model: 'gpt-6.1-sol', thinking: 'huge' } as unknown as AgentConfig;
+
+    await expect(updateConfigFile(filePath, file => withNewAgent(file, 'bad', agent))).rejects.toThrow('thinking');
   });
 });

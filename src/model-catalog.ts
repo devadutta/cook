@@ -46,6 +46,10 @@ export function getProviderInfo(provider: AgentProvider): ProviderInfo {
 }
 
 const GATEWAY_MODELS_URL = 'https://ai-gateway.vercel.sh/v1/models';
+// The ChatGPT backend hides each model from Codex CLI versions older than its
+// minimal_client_version. cook builds its own requests, so it asks for every
+// model and keeps the ones Codex would list.
+const OPENAI_CODEX_MODELS_URL = 'https://chatgpt.com/backend-api/codex/models?client_version=9999.0.0';
 
 function formatTokens(count: number): string {
   if (count >= 1_000_000) {
@@ -156,6 +160,29 @@ export function parseGoogleModels(body: unknown): ModelOption[] {
     });
 }
 
+export function parseOpenAICodexModels(body: unknown): ModelOption[] {
+  const rank = (item: Record<string, unknown>) => numberField(item, 'priority') ?? Number.MAX_SAFE_INTEGER;
+
+  return asRecordArray((body as { models?: unknown } | null)?.models)
+    .filter(item => item.visibility === 'list')
+    .sort((left, right) => rank(left) - rank(right))
+    .flatMap(item => {
+      const id = stringField(item, 'slug');
+      if (!id) {
+        return [];
+      }
+
+      const contextWindow = numberField(item, 'context_window');
+      return [{
+        id,
+        description: joinDescription([
+          contextWindow ? `${formatTokens(contextWindow)} ctx` : undefined,
+          stringField(item, 'description')?.replace(/\.$/, ''),
+        ]),
+      }];
+    });
+}
+
 const GROQ_NON_CHAT_MODEL = /(whisper|tts|guard|playai)/;
 
 export function parseGroqModels(body: unknown): ModelOption[] {
@@ -182,6 +209,7 @@ async function getJson(
   url: string,
   headers: Record<string, string>,
   options: FetchModelsOptions,
+  rejected = 'The API key was rejected',
 ): Promise<unknown> {
   const fetchFn = options.fetch ?? fetch;
   const response = await fetchFn(url, { headers, signal: options.signal });
@@ -189,7 +217,7 @@ async function getJson(
     await response.body?.cancel().catch(() => undefined);
     throw new Error(
       response.status === 401 || response.status === 403
-        ? `The API key was rejected (HTTP ${response.status})`
+        ? `${rejected} (HTTP ${response.status})`
         : `Model list request failed (HTTP ${response.status})`,
     );
   }
@@ -240,7 +268,12 @@ export async function fetchProviderModels(
         options,
       ));
     case 'openai-codex':
-      // The ChatGPT backend has no public model listing; fall back to the default.
-      return [];
+      // options.fetch must add the ChatGPT login's headers.
+      return parseOpenAICodexModels(await getJson(
+        OPENAI_CODEX_MODELS_URL,
+        {},
+        options,
+        'The ChatGPT login was rejected',
+      ));
   }
 }

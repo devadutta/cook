@@ -63,4 +63,15 @@ describe('parseCli', () => {
     expect(parsed.flags.raw).toBe(true);
     expect(parsed.instruction).toBe('find dns');
   });
+
+  it('parses --thinking and --fast', () => {
+    const parsed = parseCli(['bun', 'cook', '--thinking', 'high', '--fast', 'tidy', 'up']);
+    expect(parsed.flags.thinking).toBe('high');
+    expect(parsed.flags.fast).toBe(true);
+    expect(parsed.instruction).toBe('tidy up');
+  });
+
+  it('rejects unknown thinking levels', () => {
+    expect(() => parseCli(['bun', 'cook', '--thinking', 'huge', 'tidy'])).toThrow('Unknown thinking level "huge"');
+  });
 });

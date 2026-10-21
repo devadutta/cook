@@ -6,6 +6,7 @@ import {
   updateConfigFile,
 } from '../config.ts';
 import {
+  createOpenAICodexFetch,
   hasOpenAICodexCredentials,
   loginOpenAICodex,
   logoutOpenAICodex,
@@ -18,6 +19,7 @@ import { createRuntimeConfig } from '../runtime-config.ts';
  * second copy of them (and zod) in the binary.
  */
 export const tuiHost = {
+  createOpenAICodexFetch,
   createRuntimeConfig,
   getConfigPaths,
   hasOpenAICodexCredentials,
