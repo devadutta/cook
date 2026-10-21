@@ -187,7 +187,11 @@ async function getJson(
   const response = await fetchFn(url, { headers, signal: options.signal });
   if (!response.ok) {
     await response.body?.cancel().catch(() => undefined);
-    throw new Error(`Model list request failed (HTTP ${response.status})`);
+    throw new Error(
+      response.status === 401 || response.status === 403
+        ? `The API key was rejected (HTTP ${response.status})`
+        : `Model list request failed (HTTP ${response.status})`,
+    );
   }
   return response.json();
 }

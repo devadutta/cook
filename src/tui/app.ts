@@ -665,6 +665,7 @@ class CookTui {
           return picker;
         },
       },
+      ...this.keyItems(),
       ...OPTION_SPECS.map(spec => ({
         id: spec.key,
         label: spec.label,
@@ -785,9 +786,9 @@ class CookTui {
 
       return [{
         id: envName,
-        label: envName,
+        label: `${info.label.replace(/ API$/, '')} API key`,
         currentValue,
-        description: `${info.label}. Saved keys override the environment variable; submit empty to remove.`,
+        description: `${envName}. A saved key overrides the environment variable; submit empty to remove it.`,
         submenu: (_value: string, done: (value?: string) => void) => {
           const prompt = new TextPrompt({
             title: `${envName} → ${this.displayPath(this.scopePath())}`,
