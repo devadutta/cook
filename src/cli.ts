@@ -72,9 +72,9 @@ export function shouldLaunchTui(
 }
 
 // import() through a parameter is resolved at runtime, so the bundler cannot
-// inline the target. Compiled builds embed src/tui/app.ts as a second
-// entrypoint instead (see package.json and scripts/release.sh), which keeps
-// `cook <instruction>` from loading or even parsing any TUI code.
+// inline the target. Compiled builds embed src/tui/app.ts and src/decision.ts
+// as extra entrypoints instead (see package.json and scripts/release.sh), which
+// keeps `cook <instruction>` from loading or even parsing their code.
 function importAtRuntime<T>(specifier: string): Promise<T> {
   return import(specifier) as Promise<T>;
 }
@@ -118,6 +118,13 @@ async function runInstruction(
   );
   const openaiOAuth = await hasOpenAICodexCredentials();
   const runtime = createRuntimeConfig(config, flags, { openaiOAuth });
+  const decision = runtime.agent.type === 'decision';
+  if (!decision && !instruction) {
+    throw new CliError('Missing instruction. Example: cook "find all .py files older than 2 months"');
+  }
+  if (flags.json && !decision) {
+    throw new CliError(`--json only applies to decision agents; ${runtime.agent_name} runs tools.`);
+  }
   const logDebug = createDebugLogger(runtime.debug);
   const logToolCommand = createToolCommandLogger(!runtime.quiet);
   applyConfiguredApiKeys(runtime, logDebug);
@@ -160,6 +167,21 @@ async function runInstruction(
     const stdinContext = await readStdinContext(runtime.stdin_inline_max_bytes);
     stdin = stdinContext;
     logDebug(`stdin mode=${stdinContext.mode} bytes=${stdinContext.bytes}`);
+
+    if (decision) {
+      // One request to a decision model, no tool loop.
+      const { runDecision } = await importAtRuntime<typeof import('./decision.ts')>('./decision.js');
+      printStdout(await runDecision({
+        instruction,
+        runtime,
+        stdin: stdinContext,
+        json: Boolean(flags.json),
+        logDebug,
+        sessionLogger,
+      }));
+      exitCode = EXIT_CODES.SUCCESS;
+      return exitCode;
+    }
 
     if (runtime.dry_run) {
       const preview = await runAgent({

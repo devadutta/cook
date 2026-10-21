@@ -45,6 +45,9 @@ export function getProviderInfo(provider: AgentProvider): ProviderInfo {
   return info;
 }
 
+/** The latest Jev; decision agents only run on the gateway for now. */
+export const DEFAULT_DECISION_MODEL = 'typesafe-ai/jev';
+
 const GATEWAY_MODELS_URL = 'https://ai-gateway.vercel.sh/v1/models';
 // The ChatGPT backend hides each model from Codex CLI versions older than its
 // minimal_client_version. cook builds its own requests, so it asks for every
@@ -113,6 +116,38 @@ export function parseGatewayModels(body: unknown): ModelOption[] {
         ]),
       }];
     });
+}
+
+/** System One models; the gateway lists them as "evaluation" models. */
+export function parseGatewayDecisionModels(body: unknown): ModelOption[] {
+  const data = asRecordArray((body as { data?: unknown } | null)?.data);
+
+  return data
+    .filter(item => item.type === 'decision' || item.type === 'evaluation')
+    .flatMap(item => {
+      const id = stringField(item, 'id');
+      if (!id) {
+        return [];
+      }
+
+      const contextWindow = numberField(item, 'context_window');
+      const modalities = (item.modalities ?? {}) as { input?: unknown };
+      const images = Array.isArray(modalities.input) && modalities.input.includes('image');
+      const input = formatPerMillion(((item.pricing ?? {}) as Record<string, string | undefined>).input);
+
+      return [{
+        id,
+        description: joinDescription([
+          contextWindow ? `${formatTokens(contextWindow)} ctx` : undefined,
+          images ? 'images' : undefined,
+          input ? `${input} per 1M in` : undefined,
+        ]),
+      }];
+    });
+}
+
+export async function fetchGatewayDecisionModels(options: FetchModelsOptions = {}): Promise<ModelOption[]> {
+  return parseGatewayDecisionModels(await getJson(GATEWAY_MODELS_URL, {}, options));
 }
 
 const OPENAI_CHAT_MODEL = /^(gpt-|o\d|chatgpt-|codex-)/;

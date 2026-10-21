@@ -16,6 +16,7 @@ export interface CliFlags {
   raw?: boolean;
   thinking?: ThinkingLevel;
   fast?: boolean;
+  json?: boolean;
 }
 
 function parseThinkingLevel(value: string): ThinkingLevel {
@@ -32,7 +33,7 @@ export function parseCli(argv: string[]): { instruction: string; flags: CliFlags
     .name('cook')
     .description('Shell-native micro agent for natural language tasks')
     .version(COOK_VERSION, '-V, --version', 'Output the current version')
-    .argument('<instruction...>', 'Natural-language instruction to execute')
+    .argument('[instruction...]', 'Natural-language instruction to execute (decision agents: the input)')
     .allowUnknownOption(true)
     .option('-y, --yes', 'Skip confirmation prompts for mutating actions')
     .option('--quiet', 'Suppress status/progress output')
@@ -50,6 +51,7 @@ export function parseCli(argv: string[]): { instruction: string; flags: CliFlags
     .option('--raw', 'Enable raw Bash terminal output mode (allows isFinal)')
     .option('--thinking <level>', `Override the thinking level (${THINKING_LEVELS.join('|')})`, parseThinkingLevel)
     .option('--fast', 'Use fast mode (OpenAI priority tier, Anthropic fast mode)')
+    .option('--json', 'Print the full decision as JSON (decision agents)')
     .addHelpText(
       'after',
       [
@@ -66,11 +68,8 @@ export function parseCli(argv: string[]): { instruction: string; flags: CliFlags
 
   program.parse(argv);
   const flags = program.opts<CliFlags>();
+  // May be empty: decision agents can read their whole input from stdin.
   const instruction = program.args.join(' ').trim();
-
-  if (!instruction) {
-    throw new CliError('Missing instruction. Example: cook "find all .py files older than 2 months"');
-  }
 
   return {
     instruction,

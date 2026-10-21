@@ -32,7 +32,9 @@ import {
   withoutAgent,
 } from '../config-edit.ts';
 import {
+  DEFAULT_DECISION_MODEL,
   PROVIDERS,
+  fetchGatewayDecisionModels,
   fetchProviderModels,
   getProviderInfo,
   type ModelOption,
@@ -104,8 +106,11 @@ const FAST_MODE_NOTES: Partial<Record<AgentProvider, string>> = {
   anthropic: 'fast mode for Opus models: faster output at a premium price',
 };
 
-/** "openai · gpt-6-astra · thinking high · fast" */
+/** "openai · gpt-6-astra · thinking high · fast", or "decision · gateway · typesafe-ai/jev" */
 function describeAgent(agent: AgentConfig): string {
+  if (agent.type === 'decision') {
+    return ['decision', agent.provider, agent.model].join(' · ');
+  }
   return [
     agent.provider,
     agent.model,
@@ -136,6 +141,7 @@ class CookTui {
   private readonly footer = new Container();
   private readonly editor = new Editor(this.tui, editorTheme, { paddingX: 1 });
   private readonly modelCache = new Map<AgentProvider, Promise<ModelOption[]>>();
+  private decisionModels?: Promise<ModelOption[]>;
   private readonly homeDir: string;
   private readonly host: TuiHost;
   private state!: ConfigState;
@@ -265,6 +271,21 @@ class CookTui {
       this.modelCache.set(provider, pending);
     }
     return pending;
+  }
+
+  private loadDecisionModels(): Promise<ModelOption[]> {
+    if (!this.decisionModels) {
+      const pending = fetchGatewayDecisionModels({ signal: AbortSignal.timeout(10_000) });
+      pending.catch(() => {
+        this.decisionModels = undefined;
+      });
+      this.decisionModels = pending;
+    }
+    return this.decisionModels;
+  }
+
+  private isDecisionAgent(): boolean {
+    return this.state.runtime.agent.type === 'decision';
   }
 
   /**
@@ -449,14 +470,15 @@ class CookTui {
       return null;
     }
 
+    const decision = this.isDecisionAgent();
     const query = providerName ? prefix.slice(spaceIndex + 1) : prefix;
     const valuePrefix = providerName ? `${providerName} ` : '';
     const providers = providerName
       ? []
       : PROVIDERS
-          .filter(info => info.provider.startsWith(query))
+          .filter(info => info.provider.startsWith(query) && (!decision || info.provider === 'gateway'))
           .map(info => ({ value: info.provider, label: info.provider, description: info.label }));
-    const models = await this.loadModels(provider).catch(() => []);
+    const models = await (decision ? this.loadDecisionModels() : this.loadModels(provider)).catch(() => []);
     const matches = searchItems(models, query, model => model.id).slice(0, 50);
     const items: AutocompleteItem[] = [
       ...providers,
@@ -578,10 +600,33 @@ class CookTui {
     return selector;
   }
 
+  /** Decision agents pick from the gateway's decision models. */
+  private createDecisionModelSelector(currentModel: string): ModelSelector {
+    const info = getProviderInfo('gateway');
+    const selector = new ModelSelector({
+      providers: [{
+        value: 'gateway',
+        label: 'gateway',
+        description: [info.label, this.credentialStatus(info)].filter(Boolean).join(' · '),
+      }],
+      currentProvider: 'gateway',
+      currentModel,
+      providerLabel: () => `${info.label} decision models`,
+      defaultModel: () => DEFAULT_DECISION_MODEL,
+      loadModels: () => this.loadDecisionModels(),
+      requestRender: () => this.tui.requestRender(),
+    });
+    selector.focused = true;
+    selector.openModels('gateway');
+    return selector;
+  }
+
   private handleModelCommand(arg: string): void {
     const [first, ...rest] = arg.split(/\s+/).filter(Boolean);
     const provider = PROVIDERS.find(info => info.provider === first)?.provider;
-    if (!first) {
+    if (this.isDecisionAgent() && provider && provider !== 'gateway') {
+      this.addMessage(c.yellow(`${this.state.runtime.agent_name} is a decision agent; decision agents run on the gateway.`));
+    } else if (!first) {
       this.openModelSelector();
     } else if (provider && rest.length === 0) {
       this.openModelSelector(provider);
@@ -593,7 +638,8 @@ class CookTui {
   }
 
   private openModelSelector(provider?: AgentProvider): void {
-    const selector = this.createModelSelector();
+    const { agent } = this.state.runtime;
+    const selector = this.isDecisionAgent() ? this.createDecisionModelSelector(agent.model) : this.createModelSelector();
     selector.onSelect = selection => {
       this.showEditor();
       void this.applyModel(selection);
@@ -699,7 +745,19 @@ class CookTui {
     return picker;
   }
 
+  /** Thinking and fast mode tune the tool loop, which decision agents skip. */
+  private refuseForDecisionAgent(setting: string): boolean {
+    if (!this.isDecisionAgent()) {
+      return false;
+    }
+    this.addMessage(c.yellow(`${this.state.runtime.agent_name} is a decision agent; ${setting} only applies to agents that run tools.`));
+    return true;
+  }
+
   private openThinkingPicker(): void {
+    if (this.refuseForDecisionAgent('thinking')) {
+      return;
+    }
     const { agent } = this.state.runtime;
     const picker = this.createThinkingPicker(
       agent.provider,
@@ -716,6 +774,9 @@ class CookTui {
   }
 
   private async setThinking(value: string): Promise<void> {
+    if (this.refuseForDecisionAgent('thinking')) {
+      return;
+    }
     const level = value === 'default' ? undefined : value;
     if (level !== undefined && !isThinkingLevel(level)) {
       this.addMessage(c.yellow(`Unknown thinking level "${value}". Use default or one of: ${THINKING_LEVELS.join(', ')}.`));
@@ -740,6 +801,9 @@ class CookTui {
   }
 
   private async setFast(arg: string): Promise<void> {
+    if (this.refuseForDecisionAgent('fast mode')) {
+      return;
+    }
     const { runtime } = this.state;
     const next = !arg ? !runtime.agent.fast : arg === 'on' ? true : arg === 'off' ? false : undefined;
     if (next === undefined) {
@@ -766,7 +830,7 @@ class CookTui {
   private startNewAgent(arg: string): void {
     if (arg) {
       if (this.checkNewAgentName(arg)) {
-        this.pickNewAgentModel(arg);
+        this.pickNewAgentType(arg);
       }
       return;
     }
@@ -778,7 +842,7 @@ class CookTui {
     prompt.focused = true;
     prompt.onSubmit = name => {
       if (this.checkNewAgentName(name)) {
-        this.pickNewAgentModel(name);
+        this.pickNewAgentType(name);
       }
     };
     prompt.onCancel = () => this.showEditor();
@@ -795,6 +859,38 @@ class CookTui {
       return false;
     }
     return true;
+  }
+
+  private pickNewAgentType(name: string): void {
+    const picker = new Picker({
+      title: `New agent ${name} · type`,
+      items: [
+        { value: 'agent', label: 'agent', description: 'runs tools (Read, Write, Edit, Bash) until the task is done' },
+        { value: 'decision', label: 'decision', description: 'one call to a decision model; prints a score per question' },
+      ],
+      selected: 'agent',
+    });
+    picker.focused = true;
+    picker.onSelect = value => {
+      if (value === 'decision') {
+        this.pickNewDecisionModel(name);
+      } else {
+        this.pickNewAgentModel(name);
+      }
+    };
+    picker.onCancel = () => this.showEditor();
+    this.showPanel(picker);
+  }
+
+  private pickNewDecisionModel(name: string): void {
+    const selector = this.createDecisionModelSelector(DEFAULT_DECISION_MODEL);
+    selector.onSelect = selection => {
+      if (selection !== 'auto') {
+        void this.createAgent(name, { type: 'decision', provider: 'gateway', model: selection.model });
+      }
+    };
+    selector.onCancel = () => this.showEditor();
+    this.showPanel(selector);
   }
 
   private pickNewAgentModel(name: string): void {
@@ -842,7 +938,14 @@ class CookTui {
   private async createAgent(name: string, agent: AgentConfig): Promise<void> {
     this.showEditor();
     await this.persist(`created agent ${name} (${describeAgent(agent)})`, file => withNewAgent(file, name, agent));
-    if (this.state.loaded.config.agents[name]) {
+    if (!this.state.loaded.config.agents[name]) {
+      return;
+    }
+    if (agent.type === 'decision') {
+      this.addMessage(c.dim(
+        `Run it with cook --agent ${name} '{"state": "…", "questions": {…}}', or add "questions" to ${name} in ${this.displayPath(this.scopePath())} and pass just the state.`,
+      ));
+    } else {
       this.addMessage(c.dim(`Run it with cook --agent ${name} "…", or /agent ${name} to make it the default.`));
     }
   }
@@ -935,30 +1038,11 @@ class CookTui {
     }
   }
 
-  private settingItems(): SettingItem[] {
-    const { loaded, runtime, files } = this.state;
-    const { config } = loaded;
-    const agent = runtime.agent;
-    const where = (source: string) => c.dim(`(set in: ${source})`);
-    const agentWhere = where(agentSource(files, runtime.agent_name));
-    const booleanValues = ['true', 'false'];
-
+  /** Thinking and fast mode rows; decision agents have neither. */
+  private tuningItems(agentWhere: string, booleanValues: string[]): SettingItem[] {
+    const { runtime } = this.state;
+    const { agent } = runtime;
     return [
-      {
-        id: 'model',
-        label: 'Model',
-        currentValue: `${agent.provider} · ${agent.model}${this.isAutoAgent() ? ' (auto)' : ''}`,
-        description: `Provider and model for agent "${runtime.agent_name}". ${agentWhere}`,
-        submenu: (_value, done) => {
-          const selector = this.createModelSelector();
-          selector.onSelect = selection => {
-            done();
-            void this.applyModel(selection);
-          };
-          selector.onCancel = () => done();
-          return selector;
-        },
-      },
       {
         id: 'thinking',
         label: 'Thinking',
@@ -989,6 +1073,36 @@ class CookTui {
         } (agent "${runtime.agent_name}"). ${agentWhere}`,
         values: booleanValues,
       },
+    ];
+  }
+
+  private settingItems(): SettingItem[] {
+    const { loaded, runtime, files } = this.state;
+    const { config } = loaded;
+    const agent = runtime.agent;
+    const where = (source: string) => c.dim(`(set in: ${source})`);
+    const agentWhere = where(agentSource(files, runtime.agent_name));
+    const booleanValues = ['true', 'false'];
+
+    return [
+      {
+        id: 'model',
+        label: 'Model',
+        currentValue: `${agent.provider} · ${agent.model}${this.isAutoAgent() ? ' (auto)' : ''}`,
+        description: `Provider and model for agent "${runtime.agent_name}". ${agentWhere}`,
+        submenu: (_value, done) => {
+          const selector = agent.type === 'decision'
+            ? this.createDecisionModelSelector(agent.model)
+            : this.createModelSelector();
+          selector.onSelect = selection => {
+            done();
+            void this.applyModel(selection);
+          };
+          selector.onCancel = () => done();
+          return selector;
+        },
+      },
+      ...(agent.type === 'decision' ? [] : this.tuningItems(agentWhere, booleanValues)),
       {
         id: 'default_agent',
         label: 'Default agent',

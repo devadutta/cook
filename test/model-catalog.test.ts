@@ -3,6 +3,7 @@ import {
   PROVIDERS,
   fetchProviderModels,
   parseAnthropicModels,
+  parseGatewayDecisionModels,
   parseGatewayModels,
   parseGoogleModels,
   parseGroqModels,
@@ -37,6 +38,26 @@ describe('model catalog', () => {
     expect(models).toEqual([
       { id: 'anthropic/claude-sonnet-4.6', description: '1M ctx · $3/$15 per 1M' },
       { id: 'alibaba/qwen-3-14b', description: '41K ctx' },
+    ]);
+  });
+
+  it('lists gateway decision models with context, image support and input price', () => {
+    const models = parseGatewayDecisionModels({
+      data: [
+        { id: 'openai/gpt-5', type: 'language', tags: ['tool-use'] },
+        {
+          id: 'typesafe-ai/jev-1.14.0',
+          type: 'evaluation',
+          context_window: 32_000,
+          modalities: { input: ['text', 'image'] },
+          pricing: { input: '0.000000042' },
+        },
+        { id: 'liquid/d1', type: 'decision', modalities: { input: ['text'] } },
+      ],
+    });
+    expect(models).toEqual([
+      { id: 'typesafe-ai/jev-1.14.0', description: '32K ctx · images · $0.04 per 1M in' },
+      { id: 'liquid/d1', description: undefined },
     ]);
   });
 

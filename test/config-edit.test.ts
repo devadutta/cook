@@ -134,6 +134,19 @@ describe('agent profiles', () => {
     });
   });
 
+  it('keeps the type and questions of decision agents', () => {
+    const decision: AgentConfig = {
+      type: 'decision',
+      provider: 'gateway',
+      model: 'typesafe-ai/jev',
+      questions: { urgent: { type: 'boolean', instructions: 'Is it urgent?' } },
+    };
+    expect(withNewAgent({}, 'triage', decision)).toEqual({ agents: { triage: decision } });
+    expect(withAgentModel({}, 'triage', decision, 'gateway', 'typesafe-ai/jev-1.14.0')).toEqual({
+      agents: { triage: { ...decision, model: 'typesafe-ai/jev-1.14.0' } },
+    });
+  });
+
   it('keeps thinking and fast mode when copying the effective agent', () => {
     const effective: AgentConfig = { provider: 'openai-codex', model: 'gpt-6-astra', thinking: 'high', fast: true };
     expect(withAgentOption({}, 'quick', effective, 'thinking', 'low')).toEqual({
@@ -173,5 +186,28 @@ describe('updateConfigFile', () => {
     const agent = { provider: 'openai', model: 'gpt-6.1-sol', thinking: 'huge' } as unknown as AgentConfig;
 
     await expect(updateConfigFile(filePath, file => withNewAgent(file, 'bad', agent))).rejects.toThrow('thinking');
+  });
+
+  it('keeps decision agents on the gateway and questions on decision agents', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'cook-config-edit-'));
+    const filePath = path.join(dir, 'config.json');
+    const questions = { urgent: { type: 'boolean' as const, instructions: 'Is it urgent?' } };
+
+    await expect(updateConfigFile(filePath, file => withNewAgent(file, 'judge', {
+      type: 'decision',
+      provider: 'openai',
+      model: 'gpt-6.1-sol',
+    }))).rejects.toThrow('agents.judge.provider: decision agents run on the gateway provider');
+    await expect(updateConfigFile(filePath, file => withNewAgent(file, 'chef', {
+      provider: 'gateway',
+      model: 'openai/gpt-5',
+      questions,
+    }))).rejects.toThrow('agents.chef.questions: questions only apply');
+    await expect(updateConfigFile(filePath, file => withNewAgent(file, 'judge', {
+      type: 'decision',
+      provider: 'gateway',
+      model: 'typesafe-ai/jev',
+      questions: { urgent: { type: 'boolean' } } as unknown as typeof questions,
+    }))).rejects.toThrow('agents.judge.questions.urgent.instructions: required');
   });
 });

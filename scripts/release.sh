@@ -4,8 +4,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 ENTRYPOINT="${REPO_ROOT}/src/cli.ts"
-# Embedded as its own entrypoint so the CLI only loads it when `cook` runs without arguments.
+# Embedded as their own entrypoints so the CLI only loads them when needed:
+# the TUI when `cook` runs without arguments, decision.ts for decision agents.
 TUI_ENTRYPOINT="${REPO_ROOT}/src/tui/app.ts"
+DECISION_ENTRYPOINT="${REPO_ROOT}/src/decision.ts"
 OUT_DIR="${REPO_ROOT}/dist/release"
 
 if ! command -v bun >/dev/null 2>&1; then
@@ -32,6 +34,7 @@ build_target() {
     --bytecode \
     "${ENTRYPOINT}" \
     "${TUI_ENTRYPOINT}" \
+    "${DECISION_ENTRYPOINT}" \
     --target="${target}" \
     --outfile="${output_path}"
 

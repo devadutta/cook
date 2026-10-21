@@ -23,7 +23,12 @@ export const GATEWAY_KEY_ENV = 'AI_GATEWAY_API_KEY';
 
 // Drops values that only restate built-in defaults so copied agents stay small.
 function compactAgent(agent: AgentConfig): AgentConfig {
-  const compacted: AgentConfig = { provider: agent.provider, model: agent.model };
+  const compacted: AgentConfig = agent.type === 'decision'
+    ? { type: 'decision', provider: agent.provider, model: agent.model }
+    : { provider: agent.provider, model: agent.model };
+  if (agent.questions) {
+    compacted.questions = agent.questions;
+  }
   if (agent.structured_output !== undefined) {
     compacted.structured_output = agent.structured_output;
   }
