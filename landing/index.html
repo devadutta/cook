@@ -4,815 +4,890 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>cook — portable terminal AI agent</title>
-<meta name="description" content="A portable terminal AI agent that runs tasks in natural language. One binary. No runtime. Works with any LLM provider.">
+<meta name="description" content="An AI agent for your terminal. Tell it what you want in plain words; it reads files, runs commands, and asks before it changes anything. One binary, any model.">
+<meta name="theme-color" content="#E3E5E1">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <meta property="og:title" content="cook — portable terminal AI agent">
-<meta property="og:description" content="A portable terminal AI agent that runs tasks in natural language. One binary. No runtime. Works with any LLM provider.">
+<meta property="og:description" content="Tell your shell what you want. One binary, any model, and it asks before it changes anything.">
 <meta property="og:image" content="https://getcook.dev/cook-og.jpg">
 <meta property="og:url" content="https://getcook.dev">
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="cook — portable terminal AI agent">
-<meta name="twitter:description" content="One binary. No runtime. Works with any LLM provider.">
+<meta name="twitter:description" content="Tell your shell what you want. One binary, any model.">
 <meta name="twitter:image" content="https://getcook.dev/cook-og.jpg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #0a0a0a;
-    --surface: #141414;
-    --border: #262626;
-    --border-highlight: #3a3a3a;
-    --text: #e0e0e0;
-    --text-dim: #707070;
-    --text-muted: #505050;
-    --accent: #c8ff00;
-    --accent-dim: #6b8700;
-    --red: #ff5f57;
-    --yellow: #febc2e;
-    --green: #28c840;
-    --blue: #5fa8ff;
-    --cyan: #56d4bc;
-    --mono: 'SF Mono', 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', 'Monaco', monospace;
+    /* page: brushed steel and graphite ink */
+    --steel: #E3E5E1;
+    --steel-light: #F1F2EF;
+    --steel-rule: #CBCFCA;
+    --ink: #1C1E1D;
+    --ink-soft: #565B58;
+    /* the second color on a two-color kitchen ticket printer */
+    --order: #C4291C;
+
+    /* terminal: cook's own ANSI palette */
+    --iron: #141615;
+    --iron-bar: #202322;
+    --iron-rule: #2D312F;
+    --t-text: #D8DCD8;
+    --t-dim: #7C837F;
+    --t-cyan: #5CC8D7;
+    --t-green: #6BD36F;
+    --t-yellow: #E6C46A;
+    --t-prompt: #F0705F;
+
+    --sans: 'Archivo', 'Helvetica Neue', Arial, sans-serif;
+    --mono: ui-monospace, 'SF Mono', 'JetBrains Mono', 'Cascadia Code', Menlo, Consolas, monospace;
   }
 
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
-  html {
-    scroll-behavior: smooth;
-    font-size: 15px;
-  }
+  html { -webkit-text-size-adjust: 100%; }
 
   body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: var(--mono);
-    line-height: 1.6;
+    background: var(--steel);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 17px;
+    line-height: 1.55;
     -webkit-font-smoothing: antialiased;
   }
 
-  ::selection {
-    background: var(--accent);
-    color: var(--bg);
-  }
+  ::selection { background: var(--ink); color: var(--steel); }
 
   a {
-    color: var(--accent);
-    text-decoration: none;
-    transition: opacity 0.15s;
+    color: var(--order);
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
   }
-  a:hover { opacity: 0.8; }
+  a:hover { text-decoration-thickness: 2px; }
 
-  /* ---- LAYOUT ---- */
-  .container {
-    max-width: 720px;
+  :focus-visible {
+    outline: 2px solid var(--order);
+    outline-offset: 3px;
+    border-radius: 3px;
+  }
+
+  code, kbd { font-family: var(--mono); font-size: 0.88em; }
+
+  .wrap {
+    max-width: 1040px;
     margin: 0 auto;
     padding: 0 24px;
   }
 
-  section {
-    padding: 80px 0;
-    border-bottom: 1px solid var(--border);
-  }
-  section:last-of-type { border-bottom: none; }
-
-  /* ---- HERO ---- */
-  .hero {
-    padding: 100px 0 80px;
-    text-align: center;
+  /* ---- header ---- */
+  .top {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 24px;
+    padding: 28px 0;
   }
 
-  .hero-ascii {
-    color: var(--accent);
-    font-size: 11px;
-    line-height: 1.3;
-    letter-spacing: 0;
-    margin-bottom: 32px;
-    text-align: left;
-    display: inline-block;
+  .wordmark {
+    color: var(--ink);
+    text-decoration: none;
+    font-weight: 800;
+    font-stretch: 125%;
+    font-size: 1.35rem;
+    letter-spacing: -0.02em;
   }
 
-  .hero-tagline {
-    font-size: 1.15rem;
-    color: var(--text);
-    margin-bottom: 8px;
-    font-weight: 400;
+  .version {
+    margin-left: 10px;
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    color: var(--ink-soft);
+    text-decoration: none;
+  }
+  .version:hover { color: var(--order); }
+
+  .top nav { display: flex; gap: 22px; font-size: 0.95rem; }
+  .top nav a { color: var(--ink-soft); text-decoration: none; }
+  .top nav a:hover { color: var(--ink); }
+
+  /* ---- hero ---- */
+  .hero { padding: 48px 0 0; }
+
+  h1 {
+    font-weight: 800;
+    font-stretch: 125%;
+    font-size: clamp(2.5rem, 6.4vw, 4.75rem);
+    line-height: 0.98;
+    letter-spacing: -0.035em;
+    max-width: 12ch;
   }
 
-  .hero-sub {
-    font-size: 0.85rem;
-    color: var(--text-dim);
-    margin-bottom: 40px;
+  .lede {
+    margin-top: 28px;
+    max-width: 34em;
+    font-size: 1.2rem;
+    color: var(--ink-soft);
   }
 
-  .hero-install {
-  }
-
-  .install-box {
-    display: inline-block;
-    background: var(--surface);
-    border: 1px solid var(--border);
+  .install {
+    margin-top: 36px;
+    display: inline-flex;
+    align-items: center;
+    max-width: 100%;
+    background: var(--steel-light);
+    border: 1px solid var(--steel-rule);
     border-radius: 8px;
-    padding: 14px 24px;
-    font-size: 0.85rem;
-    color: var(--text);
-    position: relative;
-    cursor: pointer;
-    transition: border-color 0.2s;
-    text-align: left;
   }
-  .install-box:hover {
-    border-color: var(--border-highlight);
-  }
-  .install-box .prompt { color: var(--accent); }
-  .install-box .comment { color: var(--text-muted); font-size: 0.75rem; display: block; margin-top: 4px; }
-  .install-box .copied-toast {
-    position: absolute;
-    top: -32px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: var(--accent);
-    color: var(--bg);
-    font-size: 0.7rem;
-    padding: 4px 10px;
-    border-radius: 4px;
-    opacity: 0;
-    transition: opacity 0.2s;
-    pointer-events: none;
-  }
-  .install-box .copied-toast.show { opacity: 1; }
 
-  .hero-nav {
+  .install code {
+    padding: 14px 4px 14px 18px;
+    font-size: 0.92rem;
+    white-space: nowrap;
+    overflow-x: auto;
+  }
+  .install code .p { color: var(--order); user-select: none; }
+
+  .copy {
+    flex-shrink: 0;
+    margin: 6px;
+    padding: 8px 14px;
+    border: 0;
+    border-radius: 5px;
+    background: var(--ink);
+    color: var(--steel-light);
+    font: 600 0.85rem var(--sans);
+    cursor: pointer;
+    min-width: 76px;
+  }
+  .copy:hover { background: #000; }
+
+  .install-note {
+    margin-top: 14px;
+    font-size: 0.92rem;
+    color: var(--ink-soft);
+  }
+
+  /* ---- terminal ---- */
+  .terminal {
+    margin: 52px 0 0;
+    background: var(--iron);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.6),
+      0 40px 70px -30px rgba(20, 22, 21, 0.55);
+  }
+
+  .term-bar {
+    display: flex;
+    align-items: stretch;
+    gap: 14px;
+    padding: 0 14px;
+    background: var(--iron-bar);
+    border-bottom: 1px solid var(--iron-rule);
+  }
+
+  .lights { display: flex; align-items: center; gap: 8px; padding: 14px 4px; }
+  .lights i { width: 12px; height: 12px; border-radius: 50%; background: #3A3F3C; }
+  .lights i:nth-child(1) { background: #FF5F57; }
+  .lights i:nth-child(2) { background: #FEBC2E; }
+  .lights i:nth-child(3) { background: #28C840; }
+
+  .tabs {
+    display: flex;
+    gap: 2px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .tabs::-webkit-scrollbar { display: none; }
+
+  .tab {
+    position: relative;
+    padding: 0 14px;
+    border: 0;
+    background: none;
+    color: var(--t-dim);
+    font: 500 0.85rem var(--sans);
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .tab:hover { color: var(--t-text); }
+  .tab[aria-selected="true"] { color: var(--t-text); }
+  .tab[aria-selected="true"]::after {
+    content: '';
+    position: absolute;
+    left: 14px;
+    right: 14px;
+    bottom: -1px;
+    height: 2px;
+    background: var(--t-prompt);
+  }
+  .tab:focus-visible { outline-offset: -4px; }
+
+  .badge {
+    margin-left: 6px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: var(--t-prompt);
+    color: var(--iron);
+    font-size: 0.7rem;
+    font-weight: 700;
+  }
+
+  .screen {
+    height: calc(22 * 1.55em + 40px);
+    padding: 20px 22px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    font-family: var(--mono);
+    font-size: 13.5px;
+    line-height: 1.55;
+    color: var(--t-text);
+  }
+
+  .screen .ln { white-space: pre; min-height: 1.55em; }
+  .screen .d { color: var(--t-dim); }
+  .screen .c { color: var(--t-cyan); }
+  .screen .g { color: var(--t-green); }
+  .screen .y { color: var(--t-yellow); }
+  .screen .b { font-weight: 700; color: #F2F4F2; }
+  .screen .p { color: var(--t-prompt); }
+  .screen .cur {
+    background: var(--t-text);
+    color: var(--iron);
+    animation: blink 1.1s steps(1) infinite;
+  }
+
+  @keyframes blink { 50% { background: transparent; color: inherit; } }
+
+  /* ---- sections ---- */
+  .band {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.9fr);
+    gap: 32px 64px;
+    padding: 96px 0;
+    border-top: 1px solid var(--steel-rule);
+  }
+  .hero + .band { margin-top: 96px; }
+
+  h2 {
+    font-weight: 750;
+    font-stretch: 112%;
+    font-size: 1.75rem;
+    line-height: 1.12;
+    letter-spacing: -0.02em;
+  }
+
+  .band-intro p {
+    margin-top: 16px;
+    color: var(--ink-soft);
+    max-width: 30em;
+  }
+
+  .code {
+    background: var(--steel-light);
+    border: 1px solid var(--steel-rule);
+    border-radius: 8px;
+    padding: 20px 22px;
+    font-family: var(--mono);
+    font-size: 0.86rem;
+    line-height: 1.75;
+    white-space: pre;
+    overflow-x: auto;
+  }
+  .code .p { color: var(--order); user-select: none; }
+  .code .note { color: var(--ink-soft); }
+
+  .points { margin-top: 36px; display: grid; gap: 22px; }
+  .points dt { font-weight: 650; }
+  .points dd { color: var(--ink-soft); }
+
+  .help {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: 10px 28px;
+    font-size: 0.98rem;
+  }
+  .help dt { font-family: var(--mono); font-size: 0.88rem; padding-top: 2px; white-space: nowrap; }
+  .help dd { color: var(--ink-soft); }
+
+  .aside {
+    margin-top: 28px;
+    padding-left: 16px;
+    border-left: 2px solid var(--order);
+    color: var(--ink-soft);
+    max-width: 38em;
+  }
+
+  table { width: 100%; border-collapse: collapse; font-size: 0.98rem; }
+  th {
+    text-align: left;
+    font-weight: 600;
+    font-size: 0.85rem;
+    color: var(--ink-soft);
+    padding: 0 16px 10px 0;
+    border-bottom: 1px solid var(--ink);
+  }
+  td {
+    padding: 13px 16px 13px 0;
+    border-bottom: 1px solid var(--steel-rule);
+    vertical-align: baseline;
+  }
+  td code { white-space: nowrap; }
+  td:nth-child(2), td:nth-child(3) { color: var(--ink-soft); }
+  .table-scroll { overflow-x: auto; }
+
+  .safety { list-style: none; display: grid; gap: 16px; }
+  .safety li { padding-left: 28px; position: relative; }
+  .safety li::before {
+    content: 'y/N';
+    position: absolute;
+    left: -14px;
+    top: 4px;
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    color: var(--order);
+    width: 34px;
+    text-align: right;
+  }
+  .safety strong { font-weight: 650; }
+  .safety span { color: var(--ink-soft); }
+
+  /* ---- footer ---- */
+  .end {
+    padding: 96px 0 56px;
+    border-top: 1px solid var(--steel-rule);
+  }
+
+  .end h2 { max-width: 16ch; }
+
+  .stamp {
+    margin-top: 72px;
+    font-family: var(--mono);
+    /* 42 columns of figlet; fill the column up to a comfortable size */
+    font-size: min(24px, calc((100vw - 48px) / 26));
+    line-height: 1.15;
+    color: var(--ink);
+    white-space: pre;
+    overflow: hidden;
+  }
+
+  .foot {
     margin-top: 32px;
     display: flex;
-    justify-content: center;
-    gap: 24px;
-    font-size: 0.8rem;
-  }
-  .hero-nav a { color: var(--text-dim); }
-  .hero-nav a:hover { color: var(--text); }
-
-  /* ---- TERMINAL WINDOW ---- */
-  .terminal {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    overflow: hidden;
-    margin: 0 auto;
-    max-width: 680px;
-  }
-
-  .terminal-bar {
-    display: flex;
-    align-items: center;
-    padding: 12px 16px;
-    background: #1a1a1a;
-    border-bottom: 1px solid var(--border);
-    gap: 8px;
-  }
-
-  .terminal-dot {
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-  }
-  .terminal-dot.red { background: var(--red); }
-  .terminal-dot.yellow { background: var(--yellow); }
-  .terminal-dot.green { background: var(--green); }
-
-  .terminal-title {
-    flex: 1;
-    text-align: center;
-    color: var(--text-muted);
-    font-size: 0.75rem;
-    margin-right: 52px;
-  }
-
-  .terminal-body {
-    padding: 20px;
-    font-size: 0.8rem;
-    line-height: 1.7;
-    height: 340px;
-    overflow-y: auto;
-    position: relative;
-  }
-
-  .terminal-body::-webkit-scrollbar {
-    width: 6px;
-  }
-  .terminal-body::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  .terminal-body::-webkit-scrollbar-thumb {
-    background: var(--border-highlight);
-    border-radius: 3px;
-  }
-
-  .terminal-line {
-    white-space: pre-wrap;
-    word-break: break-all;
-    opacity: 0;
-    transform: translateY(4px);
-  }
-  .terminal-line.visible {
-    opacity: 1;
-    transform: translateY(0);
-    transition: opacity 0.15s ease, transform 0.15s ease;
-  }
-  .terminal-line.blank { height: 1.7em; }
-
-  .t-prompt { color: var(--accent); }
-  .t-cmd { color: var(--text); }
-  .t-cook { color: var(--cyan); }
-  .t-bash { color: var(--text-dim); }
-  .t-mutate { color: var(--yellow); }
-  .t-input { color: var(--green); }
-  .t-dim { color: var(--text-muted); }
-  .t-result { color: var(--text-dim); }
-
-  .cursor-blink {
-    display: inline-block;
-    width: 8px;
-    height: 15px;
-    background: var(--accent);
-    vertical-align: text-bottom;
-    animation: blink 1s step-end infinite;
-  }
-
-  /* ---- FEATURES ---- */
-  .features-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 24px;
-    margin-top: 40px;
-  }
-
-  .feature {
-    padding: 20px;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    transition: border-color 0.2s;
-  }
-  .feature:hover { border-color: var(--border-highlight); }
-
-  .feature-icon {
-    font-size: 0.75rem;
-    color: var(--accent);
-    margin-bottom: 10px;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-  }
-
-  .feature h3 {
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 12px 24px;
     font-size: 0.9rem;
-    font-weight: 500;
-    margin-bottom: 6px;
+    color: var(--ink-soft);
+  }
+  .foot a { color: var(--ink-soft); }
+
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
   }
 
-  .feature p {
-    font-size: 0.78rem;
-    color: var(--text-dim);
-    line-height: 1.5;
+  @media (max-width: 760px) {
+    body { font-size: 16px; }
+    .top nav { gap: 16px; }
+    .top nav .optional { display: none; }
+    .hero { padding-top: 40px; }
+    .lede { font-size: 1.08rem; }
+    .install { display: flex; }
+    .install code { white-space: normal; overflow-wrap: anywhere; padding-right: 8px; }
+    .terminal { margin-top: 44px; margin-left: -12px; margin-right: -12px; border-radius: 10px; }
+    .lights { display: none; }
+    .screen { font-size: 11px; padding: 16px; }
+    .band { grid-template-columns: minmax(0, 1fr); padding: 64px 0; }
+    .hero + .band { margin-top: 64px; }
+    .help { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+    .help dd { margin-bottom: 12px; }
   }
 
-  /* ---- SECTION HEADERS ---- */
-  .section-label {
-    font-size: 0.7rem;
-    color: var(--accent-dim);
-    text-transform: uppercase;
-    letter-spacing: 2px;
-    margin-bottom: 12px;
-  }
-
-  .section-title {
-    font-size: 1.3rem;
-    font-weight: 500;
-    margin-bottom: 16px;
-  }
-
-  .section-desc {
-    color: var(--text-dim);
-    font-size: 0.85rem;
-    margin-bottom: 32px;
-    max-width: 540px;
-  }
-
-  /* ---- PROVIDERS TABLE ---- */
-  .provider-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 0.8rem;
-    margin-top: 24px;
-  }
-
-  .provider-table th {
-    text-align: left;
-    color: var(--text-muted);
-    font-weight: 400;
-    padding: 8px 0;
-    border-bottom: 1px solid var(--border);
-    font-size: 0.7rem;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-  }
-
-  .provider-table td {
-    padding: 10px 0;
-    border-bottom: 1px solid var(--border);
-    color: var(--text-dim);
-  }
-
-  .provider-table td:first-child { color: var(--text); }
-
-  .provider-table tr:last-child td { border-bottom: none; }
-
-  /* ---- CODE BLOCKS ---- */
-  .code-block {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 16px 20px;
-    font-size: 0.8rem;
-    font-family: var(--mono);
-    overflow-x: auto;
-    margin: 16px 0;
-    line-height: 1.7;
-    white-space: pre;
-  }
-  .code-block .prompt { color: var(--accent); }
-  .code-block .comment { color: var(--text-muted); }
-
-  /* ---- SAFETY SECTION ---- */
-  .safety-list {
-    list-style: none;
-    margin-top: 24px;
-  }
-  .safety-list li {
-    padding: 12px 0;
-    border-bottom: 1px solid var(--border);
-    font-size: 0.85rem;
-    color: var(--text-dim);
-    display: flex;
-    align-items: baseline;
-    gap: 12px;
-  }
-  .safety-list li:last-child { border-bottom: none; }
-  .safety-list .check {
-    color: var(--green);
-    flex-shrink: 0;
-  }
-
-  /* ---- EXAMPLES ---- */
-  .examples {
-    margin-top: 24px;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-  }
-  .example-item {
-    display: flex;
-    gap: 16px;
-    align-items: baseline;
-    font-size: 0.8rem;
-  }
-  .example-desc {
-    color: var(--text-muted);
-    min-width: 180px;
-    flex-shrink: 0;
-  }
-  .example-cmd { color: var(--text); }
-
-  /* ---- CTA ---- */
-  .cta {
-    text-align: center;
-    padding: 100px 0;
-  }
-  .cta-title {
-    font-size: 1.2rem;
-    margin-bottom: 24px;
-  }
-
-  /* ---- FOOTER ---- */
-  footer {
-    text-align: center;
-    padding: 40px 0;
-    color: var(--text-muted);
-    font-size: 0.7rem;
-  }
-  footer a { color: var(--text-dim); }
-
-  /* ---- ANIMATIONS ---- */
-  @keyframes blink {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0; }
-  }
-
-  /* ---- RESPONSIVE ---- */
-  @media (max-width: 600px) {
-    .hero-ascii { font-size: 7.5px; }
-    .features-grid { grid-template-columns: 1fr; }
-    .hero-nav { flex-wrap: wrap; gap: 12px; }
-    .terminal-body { padding: 14px; font-size: 0.72rem; }
-    .example-item { flex-direction: column; gap: 4px; }
-    .example-desc { min-width: 0; }
-    section { padding: 60px 0; }
-    .hero { padding: 60px 0; }
+  @media (prefers-reduced-motion: reduce) {
+    .screen .cur { animation: none; }
   }
 </style>
 </head>
 <body>
 
-<!-- HERO -->
-<section class="hero">
-  <div class="container">
-<pre class="hero-ascii">
-                              oooo
+<div class="wrap">
+  <header class="top">
+    <div>
+      <a class="wordmark" href="/">cook</a><a class="version" href="https://github.com/devadutta/cook/releases/latest">v0.3.1</a>
+    </div>
+    <nav aria-label="Sections">
+      <a href="#setup">Setup</a>
+      <a class="optional" href="#providers">Providers</a>
+      <a class="optional" href="#safety">Safety</a>
+      <a href="https://github.com/devadutta/cook">GitHub</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero">
+      <h1>Tell your shell what you want.</h1>
+      <p class="lede">cook is an AI agent for your terminal. It reads files and runs commands to get the job done, and asks before it changes anything. One binary, any model.</p>
+
+      <div class="install">
+        <code id="install-cmd"><span class="p">$ </span>curl -fsSL https://getcook.dev/install.sh | sh</code>
+        <button class="copy" type="button" data-copy="curl -fsSL https://getcook.dev/install.sh | sh">Copy</button>
+      </div>
+      <p class="install-note">For macOS, Linux and Windows (Git Bash). Then run <code>cook</code> on its own to pick a model.</p>
+
+      <div class="terminal">
+        <div class="term-bar">
+          <div class="lights" aria-hidden="true"><i></i><i></i><i></i></div>
+          <div class="tabs" role="tablist" aria-label="Example sessions">
+            <button class="tab" role="tab" type="button" id="tab-commit" aria-controls="screen" aria-selected="true" data-scene="commit">Commit and push</button>
+            <button class="tab" role="tab" type="button" id="tab-logs" aria-controls="screen" aria-selected="false" tabindex="-1" data-scene="logs">Read a log</button>
+            <button class="tab" role="tab" type="button" id="tab-setup" aria-controls="screen" aria-selected="false" tabindex="-1" data-scene="setup">Set up<span class="badge">new</span></button>
+            <button class="tab" role="tab" type="button" id="tab-dry" aria-controls="screen" aria-selected="false" tabindex="-1" data-scene="dry">Dry run</button>
+          </div>
+        </div>
+        <div class="screen" id="screen" role="tabpanel" aria-labelledby="tab-commit">
+          <p class="sr-only" id="screen-summary"></p>
+          <div id="screen-lines" aria-hidden="true"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="band" id="usage">
+      <div class="band-intro">
+        <h2>Works the way your shell does.</h2>
+        <p>Quotes are optional. Pipe things in, script it, run it from cron.</p>
+      </div>
+      <div>
+        <pre class="code"><span class="note"># plain words</span>
+<span class="p">$ </span>cook find all TODO comments and summarize them
+
+<span class="note"># pipe anything in</span>
+<span class="p">$ </span>git diff main | cook "write a changelog entry"
+
+<span class="note"># run a saved prompt</span>
+<span class="p">$ </span>cook /create-pr
+
+<span class="note"># see what would change first</span>
+<span class="p">$ </span>cook --dry-run "refactor the auth module"</pre>
+
+        <dl class="points">
+          <div>
+            <dt>Saved prompts become commands</dt>
+            <dd>Put a prompt in <code>.cook/commands/deploy.md</code> and run <code>cook /deploy</code>. Your Cursor, Claude and Codex command folders work too.</dd>
+          </div>
+          <div>
+            <dt>An agent for each job</dt>
+            <dd>Give agents different models and prompts, then pick one with <code>--agent fast</code>.</dd>
+          </div>
+          <div>
+            <dt>Nothing else to install</dt>
+            <dd>cook is a single executable. No Node, Python or other runtime.</dd>
+          </div>
+        </dl>
+      </div>
+    </section>
+
+    <section class="band" id="setup">
+      <div class="band-intro">
+        <h2>Set it up without the docs.</h2>
+        <p>Run <code>cook</code> with no arguments to open the setup screen, then type <kbd>/</kbd> to see what you can change.</p>
+      </div>
+      <div>
+        <dl class="help">
+          <dt>/model [provider] [id]</dt>
+          <dd>Pick a provider, then a model from its live list. For the Vercel AI Gateway that's 300+ models with context size and price.</dd>
+          <dt>/settings</dt>
+          <dd>API keys, steps, timeouts, confirmations, prompt files and every other option, with the file each one comes from.</dd>
+          <dt>/keys</dt>
+          <dd>Paste API keys. Input is masked and the config file is readable only by you.</dd>
+          <dt>/agent [name]</dt>
+          <dd>Switch the default agent, or create one from the current setup.</dd>
+          <dt>/scope global|local</dt>
+          <dd>Save to <code>~/.cook</code> for everywhere, or to this project only.</dd>
+          <dt>/login</dt>
+          <dd>Sign in with ChatGPT to use the models your plan includes.</dd>
+        </dl>
+        <p class="aside">Type anything else and it runs as a normal task. The setup screen only loads when you run <code>cook</code> on its own, so <code>cook "your task"</code> starts as fast as it always has.</p>
+      </div>
+    </section>
+
+    <section class="band" id="providers">
+      <div class="band-intro">
+        <h2>Use the model you already pay for.</h2>
+        <p>cook uses the first provider it finds a key for, in this order. Choose a different one with <code>/model</code>.</p>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr><th scope="col">Provider</th><th scope="col">Sign in with</th><th scope="col">Default model</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Vercel AI Gateway</td><td><code>AI_GATEWAY_API_KEY</code></td><td><code>google/gemini-3-flash-preview</code></td></tr>
+            <tr><td>OpenAI</td><td><code>OPENAI_API_KEY</code></td><td><code>gpt-5.2</code></td></tr>
+            <tr><td>ChatGPT plan</td><td><code>cook login</code></td><td><code>gpt-5.6-sol</code></td></tr>
+            <tr><td>Anthropic</td><td><code>ANTHROPIC_API_KEY</code></td><td><code>claude-sonnet-4-6</code></td></tr>
+            <tr><td>Google</td><td><code>GOOGLE_GENERATIVE_AI_API_KEY</code></td><td><code>gemini-3-flash-preview</code></td></tr>
+            <tr><td>Groq</td><td><code>GROQ_API_KEY</code></td><td><code>kimi-k2-instruct-0905</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="band" id="safety">
+      <div class="band-intro">
+        <h2>Nothing changes without a yes.</h2>
+        <p>Reading is free. Writing, editing and anything destructive stops and asks first.</p>
+      </div>
+      <ul class="safety">
+        <li><strong>Every change asks first.</strong> <span>Answer <code>y</code>, <code>n</code>, <code>a</code> for the rest of the run, or type what to do instead.</span></li>
+        <li><strong>The model flags risky commands.</strong> <span>Each command is classified as it's planned, not matched against a regex list.</span></li>
+        <li><strong>It stays in this folder.</strong> <span>File access is limited to the current directory unless you pass <code>--allow-outside-cwd</code>.</span></li>
+        <li><strong>Preview with <code>--dry-run</code>.</strong> <span>See the full list of changes without running any of them.</span></li>
+        <li><strong>Keep a record.</strong> <span>Turn on session logs to save every run and render it as an HTML report.</span></li>
+      </ul>
+    </section>
+
+    <section class="end" id="install">
+      <h2>Install it and tell it what you want.</h2>
+      <div class="install">
+        <code><span class="p">$ </span>curl -fsSL https://getcook.dev/install.sh | sh</code>
+        <button class="copy" type="button" data-copy="curl -fsSL https://getcook.dev/install.sh | sh">Copy</button>
+      </div>
+<pre class="stamp" aria-hidden="true">                              oooo
                               `888
  .ooooo.   .ooooo.   .ooooo.   888  oooo
 d88' `"Y8 d88' `88b d88' `88b  888 .8P'
 888       888   888 888   888  888888.
 888   .o8 888   888 888   888  888 `88b.
-`Y8bod8P' `Y8bod8P' `Y8bod8P' o888o o888o
-</pre>
-
-    <p class="hero-tagline">A portable terminal AI agent.</p>
-    <p class="hero-sub">One binary. No runtime. Works with any LLM provider.</p>
-
-    <div class="hero-install">
-      <div class="install-box" onclick="copyInstall(this)">
-        <span class="copied-toast">copied</span>
-        <span class="prompt">$</span> curl -fsSL https://getcook.dev/install.sh | sh
-        <span class="comment"># click to copy</span>
+`Y8bod8P' `Y8bod8P' `Y8bod8P' o888o o888o</pre>
+      <div class="foot">
+        <span>Built with <a href="https://bun.sh">Bun</a> and the <a href="https://ai-sdk.dev">AI SDK</a>.</span>
+        <span><a href="https://github.com/devadutta/cook">Source on GitHub</a> · <a href="https://github.com/devadutta/cook/releases/latest">Release notes</a></span>
       </div>
-    </div>
-
-    <nav class="hero-nav">
-      <a href="#demo">demo</a>
-      <a href="#features">features</a>
-      <a href="#providers">providers</a>
-      <a href="#safety">safety</a>
-      <a href="https://github.com/devadutta/cook">github</a>
-    </nav>
-  </div>
-</section>
-
-<!-- DEMO -->
-<section id="demo">
-  <div class="container">
-    <div class="terminal">
-      <div class="terminal-bar">
-        <div class="terminal-dot red"></div>
-        <div class="terminal-dot yellow"></div>
-        <div class="terminal-dot green"></div>
-        <div class="terminal-title">cook</div>
-      </div>
-      <div class="terminal-body" id="terminal-body">
-        <!-- lines injected by JS -->
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- FEATURES -->
-<section id="features">
-  <div class="container">
-    <div class="section-label">why cook</div>
-    <h2 class="section-title">Your terminal, supercharged.</h2>
-    <p class="section-desc">
-      Most AI tools lock you into an editor or a subscription.
-      cook lives in your shell and works with pipes, scripts, and cron.
-    </p>
-
-    <div class="features-grid">
-      <div class="feature">
-        <div class="feature-icon">01</div>
-        <h3>Shell-native</h3>
-        <p>Pipes in, stdout out. Works with your existing scripts and workflows.</p>
-      </div>
-      <div class="feature">
-        <div class="feature-icon">02</div>
-        <h3>Model-agnostic</h3>
-        <p>Swap between OpenAI, Anthropic, Google, Groq, or Vercel AI Gateway with a flag.</p>
-      </div>
-      <div class="feature">
-        <div class="feature-icon">03</div>
-        <h3>Single binary</h3>
-        <p>Compiles to a standalone executable. No Node, no Python, no runtime.</p>
-      </div>
-      <div class="feature">
-        <div class="feature-icon">04</div>
-        <h3>Safe by default</h3>
-        <p>Every file write and destructive command requires your explicit approval.</p>
-      </div>
-      <div class="feature">
-        <div class="feature-icon">05</div>
-        <h3>Command aliases</h3>
-        <p>Save prompts as .md files. Run them with <code style="color:var(--accent)">cook /deploy</code>. Compatible with Cursor & Claude commands.</p>
-      </div>
-      <div class="feature">
-        <div class="feature-icon">06</div>
-        <h3>Multi-agent</h3>
-        <p>Define multiple agents with different models. Switch per run with <code style="color:var(--accent)">--agent</code>.</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- EXAMPLES -->
-<section id="examples">
-  <div class="container">
-    <div class="section-label">usage</div>
-    <h2 class="section-title">Just type what you want.</h2>
-
-    <pre class="code-block"><span class="comment"># natural language — quotes optional</span>
-<span class="prompt">$</span> cook find all TODO comments and summarize them
-
-<span class="comment"># pipe data in</span>
-<span class="prompt">$</span> cat server.log | cook "find the root cause of the 502 errors"
-
-<span class="comment"># command aliases</span>
-<span class="prompt">$</span> cook /create-pr
-
-<span class="comment"># pick a model</span>
-<span class="prompt">$</span> cook --agent fast "what does main.ts export?"
-
-<span class="comment"># preview without executing</span>
-<span class="prompt">$</span> cook --dry-run "refactor the auth module"
-
-<span class="comment"># raw output, no summarization</span>
-<span class="prompt">$</span> cook --raw "find my public IP"</pre>
-  </div>
-</section>
-
-<!-- PROVIDERS -->
-<section id="providers">
-  <div class="container">
-    <div class="section-label">providers</div>
-    <h2 class="section-title">Works with what you have.</h2>
-    <p class="section-desc">
-      Set an API key and cook picks the right model automatically. No config file required.
-    </p>
-
-    <table class="provider-table">
-      <thead>
-        <tr>
-          <th>Provider</th>
-          <th>Env Variable</th>
-          <th>Default Model</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>Vercel AI Gateway</td>
-          <td>AI_GATEWAY_API_KEY</td>
-          <td>gemini-3-flash-preview</td>
-        </tr>
-        <tr>
-          <td>OpenAI</td>
-          <td>OPENAI_API_KEY</td>
-          <td>gpt-5.2</td>
-        </tr>
-        <tr>
-          <td>Anthropic</td>
-          <td>ANTHROPIC_API_KEY</td>
-          <td>claude-sonnet-4-6</td>
-        </tr>
-        <tr>
-          <td>Google</td>
-          <td>GOOGLE_GENERATIVE_AI_API_KEY</td>
-          <td>gemini-3-flash-preview</td>
-        </tr>
-        <tr>
-          <td>Groq</td>
-          <td>GROQ_API_KEY</td>
-          <td>kimi-k2-instruct</td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
-</section>
-
-<!-- SAFETY -->
-<section id="safety">
-  <div class="container">
-    <div class="section-label">safety</div>
-    <h2 class="section-title">You stay in control.</h2>
-
-    <ul class="safety-list">
-      <li><span class="check">&#10003;</span> File writes and destructive commands require confirmation</li>
-      <li><span class="check">&#10003;</span> Smart mutation detection — model-classified, not regex</li>
-      <li><span class="check">&#10003;</span> File access scoped to current directory by default</li>
-      <li><span class="check">&#10003;</span> <code>--dry-run</code> to preview everything before it runs</li>
-      <li><span class="check">&#10003;</span> Deny any action and give guidance in plain text</li>
-      <li><span class="check">&#10003;</span> Full session logging with visual HTML reports</li>
-    </ul>
-  </div>
-</section>
-
-<!-- CTA -->
-<section class="cta">
-  <div class="container">
-    <h2 class="cta-title">Get started in 10 seconds.</h2>
-
-    <pre class="code-block" style="display:inline-block;text-align:left;"><span class="comment"># install</span>
-<span class="prompt">$</span> curl -fsSL https://getcook.dev/install.sh | sh
-
-<span class="comment"># set any provider key</span>
-<span class="prompt">$</span> export ANTHROPIC_API_KEY="sk-..."
-
-<span class="comment"># go</span>
-<span class="prompt">$</span> cook "explain what this project does"</pre>
-
-    <p style="margin-top:24px;font-size:0.8rem;color:var(--text-dim);">
-      <a href="https://github.com/devadutta/cook">View on GitHub</a>
-    </p>
-  </div>
-</section>
-
-<footer>
-  <div class="container">
-    <p>built with <a href="https://bun.sh">bun</a> &amp; the <a href="https://sdk.vercel.ai">vercel ai sdk</a></p>
-  </div>
-</footer>
+    </section>
+  </main>
+</div>
 
 <script>
-// ---- COPY INSTALL ----
-function copyInstall(el) {
-  const text = 'curl -fsSL https://getcook.dev/install.sh | sh';
-  navigator.clipboard.writeText(text);
-  const toast = el.querySelector('.copied-toast');
-  toast.classList.add('show');
-  setTimeout(() => toast.classList.remove('show'), 1200);
+// ---- copy buttons ----
+for (const button of document.querySelectorAll('.copy')) {
+  button.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(button.dataset.copy);
+      button.textContent = 'Copied';
+    } catch {
+      const code = button.previousElementSibling;
+      getSelection().selectAllChildren(code);
+      button.textContent = 'Press ⌘C';
+    }
+    setTimeout(() => { button.textContent = 'Copy'; }, 1600);
+  });
 }
 
-// ---- TERMINAL SIMULATION ----
-const sequences = [
-  // Sequence 1: commit and push
-  [
-    { type: 'prompt', text: '$ cook commit and push' },
-    { type: 'blank' },
-    { type: 'cook', text: '[cook] chef' },
-    { type: 'bash', text: '[bash] git status' },
-    { type: 'bash', text: '[bash] git diff README.md' },
-    { type: 'blank' },
-    { type: 'mutate', text: '[cook] Mutating action' },
-    { type: 'mutate', text: '[cook] [bash] git add README.md' },
-    { type: 'input', text: '[cook] Proceed? [y/N/a] y' },
-    { type: 'bash', text: '[bash] git add README.md' },
-    { type: 'blank' },
-    { type: 'mutate', text: '[cook] Mutating action' },
-    { type: 'mutate', text: '[cook] [bash] git commit -m "docs: improve README"' },
-    { type: 'input', text: '[cook] Proceed? [y/N/a] y' },
-    { type: 'bash', text: '[bash] git commit -m "docs: improve README"' },
-    { type: 'blank' },
-    { type: 'mutate', text: '[cook] Mutating action' },
-    { type: 'mutate', text: '[cook] [bash] git push' },
-    { type: 'input', text: '[cook] Proceed? [y/N/a] y' },
-    { type: 'bash', text: '[bash] git push' },
-    { type: 'blank' },
-    { type: 'result', text: 'committed and pushed to origin/main.' },
-  ],
-  // Sequence 2: piped input
-  [
-    { type: 'prompt', text: '$ cat errors.log | cook "find the root cause"' },
-    { type: 'blank' },
-    { type: 'cook', text: '[cook] chef' },
-    { type: 'bash', text: '[bash] wc -l /tmp/cook-stdin-7f3a.tmp' },
-    { type: 'bash', text: '[bash] grep -n "ERROR\\|FATAL" /tmp/cook-stdin-7f3a.tmp' },
-    { type: 'bash', text: '[bash] grep -B5 "connection refused" /tmp/cook-stdin-7f3a.tmp' },
-    { type: 'blank' },
-    { type: 'result', text: 'Root cause: Redis connection pool exhausted at' },
-    { type: 'result', text: '03:14:22 UTC. The pool limit (10) was hit after' },
-    { type: 'result', text: 'a retry storm from the payment service. All 502s' },
-    { type: 'result', text: 'trace back to this single point of failure.' },
-  ],
-  // Sequence 3: quick task
-  [
-    { type: 'prompt', text: '$ cook --agent fast "list exported functions in src/"' },
-    { type: 'blank' },
-    { type: 'cook', text: '[cook] fast' },
-    { type: 'bash', text: '[bash] grep -rn "^export" src/ --include="*.ts"' },
-    { type: 'blank' },
-    { type: 'result', text: 'Found 14 exported functions across 6 files:' },
-    { type: 'result', text: '  cli.ts      — main, parseArgs, run' },
-    { type: 'result', text: '  agent.ts    — createAgent, resolveProvider' },
-    { type: 'result', text: '  tools.ts    — readFile, writeFile, editFile, bash' },
-    { type: 'result', text: '  config.ts   — loadConfig, mergeConfig, initConfig' },
-    { type: 'result', text: '  prompt.ts   — composePrompt' },
-    { type: 'result', text: '  session.ts  — startSession' },
-  ],
-  // Sequence 4: dry run
-  [
-    { type: 'prompt', text: '$ cook --dry-run "rename all .jsx files to .tsx"' },
-    { type: 'blank' },
-    { type: 'cook', text: '[cook] chef (dry-run)' },
-    { type: 'bash', text: '[bash] find src/ -name "*.jsx"' },
-    { type: 'blank' },
-    { type: 'mutate', text: '[cook] Would execute:' },
-    { type: 'mutate', text: '[cook] [bash] mv src/App.jsx src/App.tsx' },
-    { type: 'mutate', text: '[cook] [bash] mv src/Header.jsx src/Header.tsx' },
-    { type: 'mutate', text: '[cook] [bash] mv src/Footer.jsx src/Footer.tsx' },
-    { type: 'blank' },
-    { type: 'result', text: '3 files would be renamed. Run without' },
-    { type: 'result', text: '--dry-run to execute.' },
-  ],
+// ---- terminal sessions ----
+// Lines use {class:text} for color: d dim, c cyan, g green, y yellow, b bold, p prompt, cur cursor.
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const linesEl = document.getElementById('screen-lines');
+const screenEl = document.getElementById('screen');
+const summaryEl = document.getElementById('screen-summary');
+
+const RULE = '{d:' + '─'.repeat(74) + '}';
+const CUR = '{cur: }';
+
+function tui({ model = 'google/gemini-3-flash-preview', auto = true, log = [], panel }) {
+  return [
+    ' {b:cook} {d:v0.3.1}',
+    ' {d:Set up cook with / commands, or type a task and press enter to run it.}',
+    '',
+    ' {d:agent    }default {d:(auto: first provider with credentials)}',
+    ' {d:model    }gateway · google/gemini-3-flash-preview',
+    ' {d:config   }~/.cook/config.json {d:(global)}  ./.cook/config.json {d:(local)}',
+    ...log.flatMap(line => ['', line]),
+    '',
+    ...panel,
+    ` {d:default: gateway · ${model}${auto ? ' (auto)' : ''}  ·  saving to ~/.cook/config.json}`,
+  ];
+}
+
+const editor = (text, below = []) => [RULE, ` ${text}${CUR}`, RULE, ...below];
+
+const providers = selected => [
+  ' {b:Select provider}',
+  ' > ' + CUR,
+  ...[
+    ['auto', 'built-in default: first provider with credentials'],
+    ['gateway', 'Vercel AI Gateway · key in config'],
+    ['openai', 'OpenAI API · needs OPENAI_API_KEY'],
+    ['openai-codex', 'OpenAI ChatGPT login · signed in'],
+    ['anthropic', 'Anthropic · needs ANTHROPIC_API_KEY'],
+    ['google', 'Google · needs GOOGLE_GENERATIVE_AI_API_KEY'],
+    ['groq', 'Groq · needs GROQ_API_KEY'],
+  ].map(([id, note]) => id === selected
+    ? ` {c:→ ${id.padEnd(14)}${note}}`
+    : `   ${id.padEnd(14)}{d:${note}}`),
+  ' {d:type to filter · ↑↓ move · enter select · esc back}',
 ];
 
-const typeClasses = {
-  prompt: 't-prompt',
-  cook: 't-cook',
-  bash: 't-bash',
-  mutate: 't-mutate',
-  input: 't-input',
-  result: 't-result',
-  blank: '',
+// Real Vercel AI Gateway rows, in the order cook's picker shows them.
+const MODEL_LISTS = {
+  all: { count: 307, rows: [
+    ['google/gemini-3-flash-preview', 'current · not in provider list'],
+    ['alibaba/qwen-3-14b', '41K ctx · $0.12/$0.24 per 1M'],
+    ['alibaba/qwen-3-235b', '262K ctx · $0.22/$0.88 per 1M'],
+    ['alibaba/qwen-3-30b', '41K ctx · $0.12/$0.5 per 1M'],
+    ['alibaba/qwen-3-32b', '128K ctx · $0.15/$0.6 per 1M'],
+  ] },
+  opus: { count: 32, rows: [
+    ['anthropic/claude-opus-4.5', '200K ctx · $5/$25 per 1M'],
+    ['anthropic/claude-opus-4.5-batch', '200K ctx · $2.5/$12.5 per 1M'],
+    ['anthropic/claude-opus-4.6', '1M ctx · $5/$25 per 1M'],
+    ['anthropic/claude-opus-4.6-batch', '1M ctx · $2.5/$12.5 per 1M'],
+    ['anthropic/claude-opus-4.7', '1M ctx · $5/$25 per 1M'],
+  ] },
+  opus55: { count: 10, rows: [
+    ['anthropic/claude-opus-5.5', '1M ctx · $4/$20 per 1M'],
+    ['anthropic/claude-opus-5.5-fast', '1M ctx · $8/$40 per 1M'],
+    ['anthropic/claude-opus-5.5-batch', '1M ctx · $2/$10 per 1M'],
+    ['anthropic/claude-sonnet-5.5', '1M ctx · $2/$10 per 1M'],
+    ['anthropic/claude-sonnet-5.5-batch', '1M ctx · $1/$5 per 1M'],
+  ] },
 };
 
-const body = document.getElementById('terminal-body');
-let currentSequence = 0;
-let running = false;
+const models = query => {
+  const { rows, count } = MODEL_LISTS[query === 'opus 5.5' ? 'opus55' : query.length >= 4 ? 'opus' : 'all'];
+  return [
+    ' {b:Select model · Vercel AI Gateway}',
+    ` > ${query}${CUR}`,
+    ...rows.map(([id, note], index) => index === 0
+      ? ` {c:→ ${id.padEnd(35)}${note}}`
+      : `   ${id.padEnd(35)}{d:${note}}`),
+    // the picker shows 10 rows and only counts when there are more
+    ...(count > 10 ? [`   {d:(1/${count})}`] : []),
+    ' {d:type to filter or enter any id · ↑↓ move · enter select · esc back}',
+  ];
+};
 
-function clearTerminal() {
-  body.innerHTML = '';
+const PICKED = 'anthropic/claude-opus-5.5';
+const SAVED_MODEL = `{g:✓} default → gateway · ${PICKED} {d:→ ~/.cook/config.json}`;
+
+const SETTING_HELP = {
+  0: 'Provider and model for agent "default". (set in: global)',
+  2: 'AI_GATEWAY_API_KEY. A saved key overrides the environment variable.',
+  4: 'ANTHROPIC_API_KEY. A saved key overrides the environment variable.',
+};
+
+const settings = (anthropic, selected) => [
+  ' {b:Settings}',
+  ...[
+    ['Model', `gateway · ${PICKED}`],
+    ['Default agent', 'default'],
+    ['Vercel AI Gateway API key', 'config sk-…9c2e'],
+    ['OpenAI API key', 'not set'],
+    ['Anthropic API key', anthropic],
+    ['Google API key', 'not set'],
+    ['Groq API key', 'not set'],
+    ['Confirm mutations', 'true'],
+  ].map(([label, value], index) => index === selected
+    ? ` {c:→ ${label.padEnd(26)}  ${value}}`
+    : `   ${label.padEnd(26)}  {d:${value}}`),
+  `   {d:(${selected + 1}/20)}`,
+  '',
+  `   {d:${SETTING_HELP[selected]}}`,
+];
+
+const scenes = {
+  commit: {
+    summary: 'cook commit and push: cook checks git status and the diff, asks before git add, the user answers a to approve the rest, and cook commits and pushes.',
+    steps: [
+      { cmd: 'cook commit and push' },
+      { out: ['{d:[cook] default}', '{d:[bash] git status --short}', '{d:[bash] git diff --stat}', ''] },
+      { out: ['{y:[cook]} Mutating action', '{y:[cook]} {d:[bash]} git add README.md'] },
+      { ask: '{y:[cook]} Proceed? {d:[y/N/a]} or tell cook what to do: ', answer: 'a' },
+      { out: ['{d:[bash] git add README.md}', '{d:[bash] git commit -m "docs: clarify install steps"}', '{d:[bash] git push}', ''] },
+      { out: ['Committed README.md and pushed to origin/main.'], gap: 60 },
+    ],
+  },
+  logs: {
+    summary: 'A server log is piped into cook, which greps it and explains that the 502 errors come from an exhausted Redis connection pool.',
+    steps: [
+      { cmd: 'cat server.log | cook "why are we getting 502s?"' },
+      { out: ['{d:[cook] default}', '{d:[bash] grep -c " 502 " /tmp/cook-stdin-5c1e.txt}', '{d:[bash] grep -B3 "upstream timed out" /tmp/cook-stdin-5c1e.txt}', ''] },
+      {
+        out: [
+          'The 502s start at 03:14 UTC, right after the payment service',
+          'starts retrying. Every one is an upstream timeout from',
+          'redis:6379, so the Redis pool (max 10) is exhausted.',
+          '',
+          'Raise the pool size or add backoff to the payment retries.',
+        ],
+        gap: 60,
+      },
+    ],
+  },
+  setup: {
+    summary: 'Running cook with no arguments opens the setup screen. /model lists providers, then Vercel AI Gateway models with context size and price; searching for opus 5.5 and picking claude-opus-5.5 saves it. /settings then saves an Anthropic API key with masked input.',
+    steps: [
+      { cmd: 'cook' },
+      { mark: true },
+      { screen: tui({ panel: editor('') }), wait: 700 },
+      { type: '/mo', frame: text => tui({ panel: editor(text, [' {c:→ model       choose provider and model, or set them directly}']) }) },
+      { screen: tui({ panel: providers('gateway') }), wait: 900 },
+      { screen: tui({ panel: models('') }), wait: 1100 },
+      { type: 'opus 5.5', frame: text => tui({ panel: models(text) }) },
+      { screen: tui({ model: PICKED, auto: false, log: [SAVED_MODEL], panel: editor('') }), wait: 1000 },
+      { type: '/settings', frame: text => tui({ model: PICKED, auto: false, log: [SAVED_MODEL], panel: editor(text) }) },
+      ...[0, 2, 4].map(selected => ({ screen: tui({ model: PICKED, auto: false, log: [SAVED_MODEL], panel: settings('not set', selected) }), wait: 500 })),
+      {
+        type: '••••••••••••••••••••••••',
+        speed: 18,
+        frame: dots => tui({
+          model: PICKED,
+          auto: false,
+          log: [SAVED_MODEL],
+          panel: [' {b:Settings}', ' {b:ANTHROPIC_API_KEY → ~/.cook/config.json}', ` > ${dots}${CUR}`, ' {d:paste the key · empty removes it · enter to save · esc to cancel}'],
+        }),
+      },
+      {
+        screen: tui({
+          model: PICKED,
+          auto: false,
+          log: [SAVED_MODEL, '{g:✓} saved ANTHROPIC_API_KEY {d:→ ~/.cook/config.json}'],
+          panel: settings('config sk-…f3a9', 4),
+        }),
+      },
+    ],
+  },
+  dry: {
+    summary: 'cook --dry-run lists the three renames it would make without running them.',
+    steps: [
+      { cmd: 'cook --dry-run "rename the .jsx files to .tsx"' },
+      { out: ['{d:[cook] default}', '{d:[bash] find src -name "*.jsx"}'] },
+      { out: ['{c:Dry-run planned mutating actions:}', '  {b:1.} Bash: mv src/App.jsx src/App.tsx', '  {b:2.} Bash: mv src/Header.jsx src/Header.tsx', '  {b:3.} Bash: mv src/Footer.jsx src/Footer.tsx', ''], gap: 160 },
+      { out: ['Three files would be renamed. Run it again without', '--dry-run to rename them.'], gap: 60 },
+    ],
+  },
+};
+
+const ORDER = ['commit', 'logs', 'setup', 'dry'];
+let lines = [];
+let mark = 0;
+let run = 0;
+let autoplay = true;
+
+function toHtml(markup) {
+  const escaped = markup.replace(/[&<>]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[ch]);
+  return escaped.replace(/\{(\w+):([^{}]*)\}/g, (_, cls, text) => `<span class="${cls}">${text}</span>`);
 }
 
-async function sleep(ms) {
-  return new Promise(r => setTimeout(r, ms));
+function render() {
+  linesEl.innerHTML = lines.map(line => `<div class="ln">${toHtml(line)}</div>`).join('');
+  screenEl.scrollTop = screenEl.scrollHeight;
 }
 
-async function typeText(el, text, speed) {
-  for (let i = 0; i <= text.length; i++) {
-    el.textContent = text.slice(0, i);
-    await sleep(speed);
-  }
+function wait(ms, id) {
+  if (reduceMotion) return Promise.resolve(id === run);
+  return new Promise(resolve => setTimeout(() => resolve(id === run), ms));
 }
 
-async function playSequence(seq) {
-  clearTerminal();
-  for (let i = 0; i < seq.length; i++) {
-    const line = seq[i];
-    const el = document.createElement('div');
-    el.className = 'terminal-line';
+async function play(name) {
+  const id = ++run;
+  const scene = scenes[name];
+  summaryEl.textContent = scene.summary;
+  lines = [];
+  mark = 0;
+  render();
 
-    if (line.type === 'blank') {
-      el.classList.add('blank');
-      body.appendChild(el);
-      el.classList.add('visible');
-      await sleep(100);
-      continue;
+  for (const step of scene.steps) {
+    if (step.cmd) {
+      lines.push('');
+      for (let i = 0; i <= step.cmd.length; i++) {
+        lines[lines.length - 1] = `{p:$} ${step.cmd.slice(0, i)}${CUR}`;
+        render();
+        if (!await wait(30, id)) return false;
+      }
+      lines[lines.length - 1] = `{p:$} ${step.cmd}`;
+      render();
+      if (!await wait(420, id)) return false;
+    } else if (step.out) {
+      for (const line of step.out) {
+        lines.push(line);
+        render();
+        if (!await wait(step.gap ?? 130, id)) return false;
+      }
+    } else if (step.ask) {
+      lines.push(step.ask + CUR);
+      render();
+      if (!await wait(900, id)) return false;
+      lines[lines.length - 1] = step.ask + step.answer;
+      render();
+      if (!await wait(380, id)) return false;
+    } else if (step.mark) {
+      mark = lines.length;
+    } else if (step.screen) {
+      lines = lines.slice(0, mark).concat(step.screen);
+      render();
+      if (!await wait(step.wait ?? 600, id)) return false;
+    } else if (step.type !== undefined) {
+      const chars = [...step.type];
+      for (let i = 0; i <= chars.length; i++) {
+        lines = lines.slice(0, mark).concat(step.frame(chars.slice(0, i).join('')));
+        render();
+        if (!await wait(step.speed ?? 90, id)) return false;
+      }
+      if (!await wait(450, id)) return false;
     }
-
-    el.className = `terminal-line ${typeClasses[line.type] || ''}`;
-    body.appendChild(el);
-    el.classList.add('visible');
-
-    if (line.type === 'prompt') {
-      await typeText(el, line.text, 28);
-      await sleep(400);
-    } else if (line.type === 'input') {
-      // show the prompt part, then "type" the answer
-      const parts = line.text.split('] ');
-      const promptPart = parts.slice(0, -1).join('] ') + '] ';
-      const answer = parts[parts.length - 1];
-      el.textContent = promptPart;
-      await sleep(300);
-      await typeText(el, promptPart + answer, 40);
-      await sleep(200);
-    } else {
-      el.textContent = line.text;
-      await sleep(line.type === 'result' ? 60 : 120);
-    }
-
-    // auto-scroll
-    body.scrollTop = body.scrollHeight;
   }
-
-  // blinking cursor at the end
-  const cursorLine = document.createElement('div');
-  cursorLine.className = 'terminal-line visible';
-  cursorLine.innerHTML = '<span class="t-prompt">$ </span><span class="cursor-blink"></span>';
-  body.appendChild(cursorLine);
-  body.scrollTop = body.scrollHeight;
+  return true;
 }
 
-async function runDemo() {
-  if (running) return;
-  running = true;
+const tabs = [...document.querySelectorAll('.tab')];
 
-  while (true) {
-    await playSequence(sequences[currentSequence]);
-    currentSequence = (currentSequence + 1) % sequences.length;
-    await sleep(3500);
+function select(name) {
+  for (const tab of tabs) {
+    const active = tab.dataset.scene === name;
+    tab.setAttribute('aria-selected', String(active));
+    tab.tabIndex = active ? 0 : -1;
+    if (active) screenEl.setAttribute('aria-labelledby', tab.id);
   }
 }
 
-// start when terminal scrolls into view
-const termObserver = new IntersectionObserver((entries) => {
-  if (entries[0].isIntersecting) {
-    runDemo();
-    termObserver.disconnect();
+async function loop(start) {
+  let index = ORDER.indexOf(start);
+  while (autoplay) {
+    const name = ORDER[index];
+    select(name);
+    const finished = await play(name);
+    if (!finished || !autoplay || reduceMotion) return;
+    if (!await wait(3200, run)) return;
+    index = (index + 1) % ORDER.length;
   }
-}, { threshold: 0.3 });
+}
 
-termObserver.observe(document.querySelector('.terminal'));
+for (const tab of tabs) {
+  tab.addEventListener('click', () => {
+    autoplay = false;
+    select(tab.dataset.scene);
+    play(tab.dataset.scene);
+  });
+  tab.addEventListener('keydown', event => {
+    const step = { ArrowRight: 1, ArrowLeft: -1 }[event.key];
+    if (!step) return;
+    const next = tabs[(tabs.indexOf(tab) + step + tabs.length) % tabs.length];
+    next.focus();
+    next.click();
+  });
+}
+
+// The terminal sits in the hero, so the first session starts right away.
+loop('commit');
 </script>
 
 </body>
