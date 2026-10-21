@@ -85,6 +85,30 @@ function getCommandRoots(cwd: string, homeDir: string): CommandRoot[] {
   ];
 }
 
+export async function listCommandAliases(
+  cwd: string,
+  homeDir = os.homedir(),
+): Promise<string[]> {
+  const names = new Set<string>();
+
+  for (const root of getCommandRoots(cwd, homeDir)) {
+    let entries;
+    try {
+      entries = await readdir(root.directory, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+
+    for (const entry of entries) {
+      if (entry.isFile() && entry.name.endsWith('.md')) {
+        names.add(entry.name.slice(0, -'.md'.length));
+      }
+    }
+  }
+
+  return [...names].sort();
+}
+
 export async function resolveCommandInstruction(
   options: ResolveCommandInstructionOptions,
 ): Promise<ResolveCommandInstructionResult> {

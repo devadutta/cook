@@ -43,6 +43,7 @@ export function parseCli(argv: string[]): { instruction: string; flags: CliFlags
       [
         '',
         'Commands:',
+        '  cook                                 Open the interactive setup (/model, /settings, ...)',
         '  cook login [openai] [--device-code]  Sign in with ChatGPT',
         '  cook login status                    Show ChatGPT login status',
         '  cook logout [openai]                 Remove the saved ChatGPT login',
