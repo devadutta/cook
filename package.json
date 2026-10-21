@@ -1,6 +1,6 @@
 {
   "name": "cook",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Portable terminal AI agent that runs anywhere.",
   "type": "module",
   "private": true,
