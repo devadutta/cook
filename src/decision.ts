@@ -5,6 +5,9 @@ import {
   type Experimental_DecisionState as DecisionState,
   type Experimental_DecisionStatePart as DecisionStatePart,
 } from 'ai-v7';
+import { readdir } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { decision_questions_schema, type DecisionQuestions } from './config.ts';
 import { CliError } from './errors.ts';
 import type { RuntimeConfig, SessionLogger, StdinContext } from './types.ts';
@@ -20,6 +23,8 @@ type DecisionInput =
 export interface DecisionRequest {
   state: DecisionState;
   questions: DecisionQuestions;
+  /** Question files named with @name, in the order given. */
+  questionFiles: string[];
 }
 
 export interface DecisionRunOptions {
@@ -30,6 +35,7 @@ export interface DecisionRunOptions {
   logDebug: (message: string) => void;
   sessionLogger?: SessionLogger;
   fetch?: typeof fetch;
+  homeDir?: string;
 }
 
 const PART_TYPES = new Set(['text', 'file', 'json']);
@@ -118,33 +124,107 @@ async function readStdinInput(stdin: StdinContext): Promise<DecisionInput | unde
   return { kind: 'state', state: [{ type: 'file', mediaType, data: bytes }] };
 }
 
-function parseQuestions(value: unknown): DecisionQuestions {
+function parseQuestions(value: unknown, source?: string): DecisionQuestions {
   const result = decision_questions_schema.safeParse(value);
   if (!result.success) {
     const issues = result.error.issues
-      .map(issue => `${['questions', ...issue.path].join('.')}: ${issue.message}`)
+      .map(issue => `${(source ? issue.path : ['questions', ...issue.path]).join('.') || '<root>'}: ${issue.message}`)
       .join(', ');
-    throw new CliError(`Invalid decision questions: ${issues}`);
+    throw new CliError(`Invalid decision questions${source ? ` in ${source}` : ''}: ${issues}`);
   }
   return result.data;
 }
 
+const QUESTION_REF = /^@([A-Za-z0-9][A-Za-z0-9._-]*)(?=\s|$)/;
+
+/** Leading @name tokens name question files: "@asset-kind SPY" → ["asset-kind"], "SPY". */
+export function splitQuestionRefs(instruction: string): { names: string[]; rest: string } {
+  const names: string[] = [];
+  let rest = instruction.trimStart();
+  for (let match = QUESTION_REF.exec(rest); match?.[1]; match = QUESTION_REF.exec(rest)) {
+    names.push(match[1].replace(/\.json$/, ''));
+    rest = rest.slice(match[0].length).trimStart();
+  }
+  return { names, rest };
+}
+
+/** Like command aliases: the project's .cook/questions first, then ~/.cook/questions. */
+function questionDirs(cwd: string, homeDir: string): string[] {
+  return [path.join(cwd, '.cook', 'questions'), path.join(homeDir, '.cook', 'questions')];
+}
+
+async function jsonFilesIn(directory: string): Promise<string[]> {
+  try {
+    const entries = await readdir(directory, { withFileTypes: true });
+    return entries.filter(entry => entry.isFile() && entry.name.endsWith('.json')).map(entry => entry.name);
+  } catch {
+    return [];
+  }
+}
+
+/** Reads each named file's questions and combines them; a question id may appear only once. */
+async function loadQuestionFiles(
+  names: string[],
+  cwd: string,
+  homeDir: string,
+): Promise<{ questions: DecisionQuestions; files: string[] }> {
+  const dirs = questionDirs(cwd, homeDir);
+  const listings = await Promise.all(dirs.map(jsonFilesIn));
+  const questions: DecisionQuestions = {};
+  const files: string[] = [];
+
+  for (const name of names) {
+    // Exact names, so @Kind does not open kind.json on case-insensitive disks.
+    const index = listings.findIndex(listing => listing.includes(`${name}.json`));
+    if (index === -1) {
+      const available = [...new Set(listings.flat())].map(file => `@${file.slice(0, -'.json'.length)}`);
+      throw new CliError([
+        `Questions "@${name}" not found. Expected ${name}.json in ${dirs.join(' or ')}.`,
+        available.length > 0 ? `Available: ${available.sort().join(', ')}.` : undefined,
+      ].filter(Boolean).join(' '));
+    }
+
+    const filePath = path.join(dirs[index] ?? '', `${name}.json`);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(await Bun.file(filePath).text());
+    } catch (error) {
+      throw new CliError(`${filePath} is not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    for (const [id, question] of Object.entries(parseQuestions(parsed, filePath))) {
+      if (id in questions) {
+        throw new CliError(`Question "${id}" is defined in more than one of: ${names.map(item => `@${item}`).join(', ')}.`);
+      }
+      questions[id] = question;
+    }
+    files.push(filePath);
+  }
+
+  return { questions, files };
+}
+
 /**
- * Builds the request from the argument and stdin, in that order. Either can
- * hold a full request ({"state": …, "questions": {…}}); everything else is
- * state, judged against the agent's configured questions.
+ * Builds the request from the argument and stdin, in that order. Leading
+ * @name tokens load question files; either input can also hold a full request
+ * ({"state": …, "questions": {…}}). Everything else is state.
  */
 export async function resolveDecisionRequest(options: {
   instruction: string;
   stdin: StdinContext;
   questions?: DecisionQuestions;
+  cwd?: string;
+  homeDir?: string;
 }): Promise<DecisionRequest> {
+  const { names, rest } = splitQuestionRefs(options.instruction);
+  const loaded = names.length > 0
+    ? await loadQuestionFiles(names, options.cwd ?? process.cwd(), options.homeDir ?? os.homedir())
+    : undefined;
   const inputs = [
-    options.instruction.trim() ? parseInput(options.instruction) : undefined,
+    rest.trim() ? parseInput(rest) : undefined,
     await readStdinInput(options.stdin),
   ].filter((input): input is DecisionInput => input !== undefined);
 
-  let questions = options.questions;
+  let questions = loaded?.questions ?? options.questions;
   const states: DecisionState[] = [];
   for (const input of inputs) {
     if (input.kind === 'request') {
@@ -159,14 +239,18 @@ export async function resolveDecisionRequest(options: {
 
   if (!questions) {
     throw new CliError(
-      'This decision agent has no questions. Pass {"state": …, "questions": {…}} as input, or add "questions" to the agent in config.',
+      'This decision agent has no questions. Start the input with @name to load .cook/questions/name.json, or pass {"state": …, "questions": {…}}.',
     );
   }
   const [first] = states;
   if (first === undefined) {
     throw new CliError('Missing input. Pass the state to decide on as an argument or on stdin.');
   }
-  return { questions, state: states.length === 1 ? first : states.flatMap(toParts) };
+  return {
+    questions,
+    state: states.length === 1 ? first : states.flatMap(toParts),
+    questionFiles: loaded?.files ?? [],
+  };
 }
 
 function formatProbability(value: number): string {
@@ -259,8 +343,13 @@ export async function runDecision(options: DecisionRunOptions): Promise<string> 
     instruction: options.instruction,
     stdin: options.stdin,
     questions: runtime.agent.questions,
+    cwd: runtime.cwd,
+    homeDir: options.homeDir,
   });
   const questionIds = Object.keys(request.questions);
+  for (const file of request.questionFiles) {
+    logDebug(`questions from ${file}`);
+  }
   logDebug(`decision model=${runtime.agent.model} questions=${questionIds.join(',')} state=${describeState(request.state)}`);
   sessionLogger?.logEvent('agent.call.start', {
     mode: 'decision',

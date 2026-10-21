@@ -943,7 +943,7 @@ class CookTui {
     }
     if (agent.type === 'decision') {
       this.addMessage(c.dim(
-        `Run it with cook --agent ${name} '{"state": "…", "questions": {…}}', or add "questions" to ${name} in ${this.displayPath(this.scopePath())} and pass just the state.`,
+        `Run it with cook --agent ${name} @questions "…" to load .cook/questions/questions.json, or pass '{"state": "…", "questions": {…}}'.`,
       ));
     } else {
       this.addMessage(c.dim(`Run it with cook --agent ${name} "…", or /agent ${name} to make it the default.`));
