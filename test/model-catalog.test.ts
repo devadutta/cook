@@ -113,7 +113,9 @@ describe('model catalog', () => {
     expect(requests[0]?.headers.get('x-api-key')).toBe('ant-key');
     expect(requests[0]?.headers.get('anthropic-version')).toBe('2023-06-01');
 
-    await expect(fetchProviderModels('groq', { apiKey: 'groq-key', fetch })).rejects.toThrow('HTTP 401');
+    await expect(fetchProviderModels('groq', { apiKey: 'groq-key', fetch })).rejects.toThrow(
+      'The API key was rejected (HTTP 401)',
+    );
     expect(requests[1]?.headers.get('authorization')).toBe('Bearer groq-key');
   });
 

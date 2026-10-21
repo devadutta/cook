@@ -289,8 +289,8 @@ Run `cook` with no arguments to open an interactive setup screen. Type `/` to se
 |---------|--------------|
 | `/model [provider] [id]` | Pick a provider, then a model from its live list (with context size and pricing for the Vercel AI Gateway). `/model groq` jumps straight to Groq's models |
 | `/agent [name]` | Switch the default agent, or create a new one from the current agent |
-| `/settings` | Steps, timeouts, confirmations, prompt files, and the other config options |
-| `/keys` | Save provider API keys to config (input is masked) |
+| `/settings` | Model, API keys, steps, timeouts, confirmations, prompt files, and the other config options |
+| `/keys` | Just the provider API keys (input is masked) |
 | `/scope [global\|local]` | Choose whether changes go to `~/.cook/config.json` (default) or `./.cook/config.json` |
 | `/config` | Show the merged config, with keys masked |
 | `/login`, `/logout` | Sign in or out with ChatGPT |
