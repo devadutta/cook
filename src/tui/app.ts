@@ -27,6 +27,7 @@ import {
   withAgentOption,
   withApiKey,
   withDefaultAgent,
+  withNewAgent,
   withOption,
   withoutAgent,
 } from '../config-edit.ts';
@@ -38,7 +39,13 @@ import {
   type ProviderInfo,
 } from '../model-catalog.ts';
 import { isBuiltInDefaultAgent } from '../portable-default.ts';
-import type { AgentProvider, CookConfig, LoadedConfig, RuntimeConfig } from '../types.ts';
+import {
+  THINKING_LEVELS,
+  describeThinking,
+  isThinkingLevel,
+  supportsFastMode,
+} from '../provider-options.ts';
+import type { AgentConfig, AgentProvider, CookConfig, LoadedConfig, RuntimeConfig } from '../types.ts';
 import { COOK_VERSION } from '../version.ts';
 import {
   ModelSelector,
@@ -74,7 +81,11 @@ export interface RunTuiOptions {
 
 const BUILT_IN_COMMANDS: Array<{ name: string; usage: string; description: string }> = [
   { name: 'model', usage: '/model [provider] [id]', description: 'choose provider and model, or set them directly' },
+  { name: 'thinking', usage: '/thinking [level]', description: 'set how much the model reasons' },
+  { name: 'fast', usage: '/fast [on|off]', description: 'toggle fast mode (OpenAI, Anthropic)' },
   { name: 'agent', usage: '/agent [name]', description: 'switch the default agent, or create one' },
+  { name: 'new-agent', usage: '/new-agent [name]', description: 'create an agent without making it the default' },
+  { name: 'delete-agent', usage: '/delete-agent [name]', description: 'remove an agent from the config file' },
   { name: 'settings', usage: '/settings', description: 'steps, timeouts, confirmations, prompt files…' },
   { name: 'keys', usage: '/keys', description: 'save provider API keys to config' },
   { name: 'scope', usage: '/scope [global|local]', description: 'choose which config file changes go to' },
@@ -84,6 +95,24 @@ const BUILT_IN_COMMANDS: Array<{ name: string; usage: string; description: strin
   { name: 'help', usage: '/help', description: 'show commands and keys' },
   { name: 'quit', usage: '/quit', description: 'exit cook' },
 ];
+
+const AGENT_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+const FAST_MODE_NOTES: Partial<Record<AgentProvider, string>> = {
+  openai: 'priority processing: faster, at a higher price',
+  'openai-codex': 'priority processing: faster, uses more of your ChatGPT plan',
+  anthropic: 'fast mode for Opus models: faster output at a premium price',
+};
+
+/** "openai · gpt-6-astra · thinking high · fast" */
+function describeAgent(agent: AgentConfig): string {
+  return [
+    agent.provider,
+    agent.model,
+    agent.thinking ? `thinking ${agent.thinking}` : undefined,
+    agent.fast && supportsFastMode(agent.provider) ? 'fast' : undefined,
+  ].filter(Boolean).join(' · ');
+}
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -224,10 +253,14 @@ class CookTui {
     let pending = this.modelCache.get(provider);
     if (!pending) {
       const envName = getProviderInfo(provider).credential_env;
-      pending = fetchProviderModels(provider, {
-        apiKey: envName ? this.apiKeyFor(envName) : undefined,
-        signal: AbortSignal.timeout(10_000),
-      });
+      const chatgpt = provider === 'openai-codex';
+      pending = chatgpt && !this.state.openaiOAuth
+        ? Promise.reject(new Error('Run /login to list ChatGPT models'))
+        : fetchProviderModels(provider, {
+            apiKey: envName ? this.apiKeyFor(envName) : undefined,
+            fetch: chatgpt ? this.host.createOpenAICodexFetch({ homeDir: this.homeDir }) : undefined,
+            signal: AbortSignal.timeout(10_000),
+          });
       pending.catch(() => this.modelCache.delete(provider));
       this.modelCache.set(provider, pending);
     }
@@ -314,7 +347,7 @@ class CookTui {
 
   private refreshViews(): void {
     const { runtime } = this.state;
-    const model = `${runtime.agent.provider} · ${runtime.agent.model}${this.isAutoAgent() ? ' (auto)' : ''}`;
+    const model = `${describeAgent(runtime.agent)}${this.isAutoAgent() ? ' (auto)' : ''}`;
     this.footer.clear();
     this.footer.addChild(new TruncatedText(
       c.dim(`${runtime.agent_name}: ${model}  ·  saving to ${this.displayPath(this.scopePath())}  ·  ${this.displayPath(this.options.cwd)}`),
@@ -355,7 +388,7 @@ class CookTui {
     const label = (text: string) => c.dim(text.padEnd(9));
     return [
       `${label('agent')}${runtime.agent_name}${auto ? c.dim(' (auto: first provider with credentials)') : ''}`,
-      `${label('model')}${runtime.agent.provider} · ${runtime.agent.model}`,
+      `${label('model')}${describeAgent(runtime.agent)}`,
       `${label('config')}${this.displayPath(this.state.loaded.global_path)} ${c.dim('(global)')}  ${this.displayPath(this.state.loaded.local_path)} ${c.dim('(local)')}`,
     ].join('\n');
   }
@@ -385,7 +418,10 @@ class CookTui {
     const builtIns = new Set(BUILT_IN_COMMANDS.map(command => command.name));
     const completions: Record<string, (prefix: string) => Promise<AutocompleteItem[] | null> | AutocompleteItem[] | null> = {
       model: prefix => this.completeModel(prefix),
+      thinking: prefix => completeFrom(['default', ...THINKING_LEVELS], prefix),
+      fast: prefix => completeFrom(['on', 'off'], prefix),
       agent: prefix => completeFrom(Object.keys(this.state.loaded.config.agents), prefix),
+      'delete-agent': prefix => completeFrom(this.agentsInFiles(), prefix),
       scope: prefix => completeFrom(['global', 'local'], prefix),
       login: prefix => completeFrom(['device'], prefix),
     };
@@ -455,12 +491,28 @@ class CookTui {
       case 'model':
         this.handleModelCommand(arg);
         return;
+      case 'thinking':
+        if (arg) {
+          void this.setThinking(arg);
+        } else {
+          this.openThinkingPicker();
+        }
+        return;
+      case 'fast':
+        void this.setFast(arg);
+        return;
       case 'agent':
         if (arg) {
           void this.switchAgent(arg);
         } else {
           this.openAgentPicker();
         }
+        return;
+      case 'new-agent':
+        this.startNewAgent(arg);
+        return;
+      case 'delete-agent':
+        this.startDeleteAgent(arg);
         return;
       case 'settings':
         this.openSettings();
@@ -498,14 +550,14 @@ class CookTui {
 
   // ── commands ─────────────────────────────────────────────────────────
 
-  private createModelSelector(): ModelSelector {
+  private createModelSelector(allowAuto = true): ModelSelector {
     const { runtime } = this.state;
     const providers: SelectItem[] = PROVIDERS.map(info => ({
       value: info.provider,
       label: info.provider,
       description: [info.label, this.credentialStatus(info)].filter(Boolean).join(' · '),
     }));
-    if (runtime.agent_name === 'default') {
+    if (allowAuto && runtime.agent_name === 'default') {
       providers.unshift({
         value: 'auto',
         label: 'auto',
@@ -589,7 +641,7 @@ class CookTui {
     const items = Object.entries(loaded.config.agents).map(([name, agent]) => ({
       value: name,
       label: name,
-      description: isBuiltInDefaultAgent(name, agent) ? 'auto' : `${agent.provider} · ${agent.model}`,
+      description: isBuiltInDefaultAgent(name, agent) ? 'auto' : describeAgent(agent),
     }));
     const picker = new Picker({
       title: 'Select default agent',
@@ -626,6 +678,263 @@ class CookTui {
     );
   }
 
+  /** Thinking and fast mode apply to whichever provider auto picks, so keep auto agents auto. */
+  private agentToEdit(): AgentConfig {
+    const { loaded, runtime } = this.state;
+    const configured = loaded.config.agents[runtime.agent_name];
+    return configured && this.isAutoAgent() ? configured : runtime.agent;
+  }
+
+  private createThinkingPicker(provider: AgentProvider, model: string, title: string, current?: string): Picker {
+    const items: SelectItem[] = [
+      { value: 'default', label: 'default', description: 'let the provider decide' },
+      ...THINKING_LEVELS.map(level => ({
+        value: level,
+        label: level,
+        description: describeThinking(provider, model, level) ?? 'cook cannot set this for the model',
+      })),
+    ];
+    const picker = new Picker({ title, items, selected: current ?? 'default' });
+    picker.focused = true;
+    return picker;
+  }
+
+  private openThinkingPicker(): void {
+    const { agent } = this.state.runtime;
+    const picker = this.createThinkingPicker(
+      agent.provider,
+      agent.model,
+      `Thinking level · ${agent.provider} · ${agent.model}`,
+      agent.thinking,
+    );
+    picker.onSelect = value => {
+      this.showEditor();
+      void this.setThinking(value);
+    };
+    picker.onCancel = () => this.showEditor();
+    this.showPanel(picker);
+  }
+
+  private async setThinking(value: string): Promise<void> {
+    const level = value === 'default' ? undefined : value;
+    if (level !== undefined && !isThinkingLevel(level)) {
+      this.addMessage(c.yellow(`Unknown thinking level "${value}". Use default or one of: ${THINKING_LEVELS.join(', ')}.`));
+      return;
+    }
+
+    const { runtime } = this.state;
+    const name = runtime.agent_name;
+    if (runtime.agent.thinking === level) {
+      this.addMessage(c.dim(`${name} already uses thinking ${level ?? 'default'}.`));
+      return;
+    }
+    await this.persist(
+      `${name}: thinking → ${level ?? 'default'}`,
+      file => withAgentOption(file, name, this.agentToEdit(), 'thinking', level),
+      state => state.runtime.agent_name === name && state.runtime.agent.thinking === level,
+    );
+    const { agent } = this.state.runtime;
+    if (level && agent.thinking === level && !describeThinking(agent.provider, agent.model, level)) {
+      this.addMessage(c.yellow(`! cook cannot set a thinking level for ${agent.model}; it runs with the provider default.`));
+    }
+  }
+
+  private async setFast(arg: string): Promise<void> {
+    const { runtime } = this.state;
+    const next = !arg ? !runtime.agent.fast : arg === 'on' ? true : arg === 'off' ? false : undefined;
+    if (next === undefined) {
+      this.addMessage(c.yellow('Usage: /fast [on|off]'));
+      return;
+    }
+
+    const name = runtime.agent_name;
+    if (runtime.agent.fast === next) {
+      this.addMessage(c.dim(`Fast mode is already ${next ? 'on' : 'off'} for ${name}.`));
+      return;
+    }
+    await this.persist(
+      `${name}: fast mode → ${next ? 'on' : 'off'}`,
+      file => withAgentOption(file, name, this.agentToEdit(), 'fast', next || undefined),
+      state => state.runtime.agent_name === name && state.runtime.agent.fast === next,
+    );
+    const { provider } = this.state.runtime.agent;
+    if (next && !supportsFastMode(provider)) {
+      this.addMessage(c.yellow(`! ${provider} has no fast mode; it applies to OpenAI and Anthropic agents.`));
+    }
+  }
+
+  private startNewAgent(arg: string): void {
+    if (arg) {
+      if (this.checkNewAgentName(arg)) {
+        this.pickNewAgentModel(arg);
+      }
+      return;
+    }
+
+    const prompt = new TextPrompt({
+      title: 'Name for the new agent',
+      hint: 'letters, digits, ".", "_" and "-" · enter to continue · esc to cancel',
+    });
+    prompt.focused = true;
+    prompt.onSubmit = name => {
+      if (this.checkNewAgentName(name)) {
+        this.pickNewAgentModel(name);
+      }
+    };
+    prompt.onCancel = () => this.showEditor();
+    this.showPanel(prompt);
+  }
+
+  private checkNewAgentName(name: string): boolean {
+    if (!AGENT_NAME.test(name)) {
+      this.addMessage(c.yellow(`"${name}" is not a valid agent name. Use letters, digits, ".", "_" and "-".`));
+      return false;
+    }
+    if (this.state.loaded.config.agents[name]) {
+      this.addMessage(c.yellow(`Agent "${name}" already exists. /agent ${name} makes it the default.`));
+      return false;
+    }
+    return true;
+  }
+
+  private pickNewAgentModel(name: string): void {
+    const selector = this.createModelSelector(false);
+    selector.onSelect = selection => {
+      if (selection !== 'auto') {
+        this.pickNewAgentThinking(name, selection);
+      }
+    };
+    selector.onCancel = () => this.showEditor();
+    this.showPanel(selector);
+  }
+
+  private pickNewAgentThinking(name: string, selection: { provider: AgentProvider; model: string }): void {
+    const picker = this.createThinkingPicker(selection.provider, selection.model, `New agent ${name} · thinking level`);
+    picker.onSelect = value => {
+      const agent: AgentConfig = isThinkingLevel(value) ? { ...selection, thinking: value } : { ...selection };
+      if (supportsFastMode(agent.provider)) {
+        this.pickNewAgentFast(name, agent);
+      } else {
+        void this.createAgent(name, agent);
+      }
+    };
+    picker.onCancel = () => this.showEditor();
+    this.showPanel(picker);
+  }
+
+  private pickNewAgentFast(name: string, agent: AgentConfig): void {
+    const picker = new Picker({
+      title: `New agent ${name} · fast mode`,
+      items: [
+        { value: 'off', label: 'off', description: 'standard speed and price' },
+        { value: 'on', label: 'on', description: FAST_MODE_NOTES[agent.provider] },
+      ],
+      selected: 'off',
+    });
+    picker.focused = true;
+    picker.onSelect = value => {
+      void this.createAgent(name, value === 'on' ? { ...agent, fast: true } : agent);
+    };
+    picker.onCancel = () => this.showEditor();
+    this.showPanel(picker);
+  }
+
+  private async createAgent(name: string, agent: AgentConfig): Promise<void> {
+    this.showEditor();
+    await this.persist(`created agent ${name} (${describeAgent(agent)})`, file => withNewAgent(file, name, agent));
+    if (this.state.loaded.config.agents[name]) {
+      this.addMessage(c.dim(`Run it with cook --agent ${name} "…", or /agent ${name} to make it the default.`));
+    }
+  }
+
+  /** Agents written in a config file; the built-in default only exists in code. */
+  private agentsInFiles(): string[] {
+    const { files } = this.state;
+    return [...new Set([...Object.keys(files.global.agents ?? {}), ...Object.keys(files.local.agents ?? {})])];
+  }
+
+  private startDeleteAgent(arg: string): void {
+    if (arg) {
+      this.confirmDeleteAgent(arg);
+      return;
+    }
+
+    const { files, loaded } = this.state;
+    const names = this.agentsInFiles();
+    if (names.length === 0) {
+      this.addMessage('Your config files define no agents.');
+      return;
+    }
+    const picker = new Picker({
+      title: 'Delete agent',
+      items: names.map(name => {
+        const scopes = (['global', 'local'] as const).filter(scope => files[scope].agents?.[name]);
+        const agent = loaded.config.agents[name];
+        return {
+          value: name,
+          label: name,
+          description: [agent ? describeAgent(agent) : undefined, scopes.join(' + ')].filter(Boolean).join(' · '),
+        };
+      }),
+    });
+    picker.focused = true;
+    picker.onSelect = name => this.confirmDeleteAgent(name);
+    picker.onCancel = () => this.showEditor();
+    this.showPanel(picker);
+  }
+
+  private confirmDeleteAgent(name: string): void {
+    const { files } = this.state;
+    const scope = this.scope;
+    const other: Scope = scope === 'global' ? 'local' : 'global';
+    const refuse = (message: string) => {
+      this.addMessage(c.yellow(message));
+      this.showEditor();
+    };
+
+    const agent = files[scope].agents?.[name];
+    if (!agent) {
+      refuse(files[other].agents?.[name]
+        ? `${name} is defined in ${this.displayPath(this.scopePath(other))}. Run /scope ${other} to delete it there.`
+        : `No agent named "${name}" in your config files.`);
+      return;
+    }
+    // The built-in default agent stays available, so only other names can leave default_agent dangling.
+    const defaultIn = (['local', 'global'] as const).find(candidate => files[candidate].default_agent === name);
+    if (defaultIn && name !== 'default') {
+      refuse(`${name} is the default agent in ${this.displayPath(this.scopePath(defaultIn))}. Make another agent the default with /agent first.`);
+      return;
+    }
+
+    const picker = new Picker({
+      title: `Delete ${name} from ${this.displayPath(this.scopePath())}?`,
+      items: [
+        { value: 'keep', label: 'keep', description: 'leave the agent as it is' },
+        { value: 'delete', label: 'delete', description: describeAgent(agent) },
+      ],
+      selected: 'keep',
+    });
+    picker.focused = true;
+    picker.onSelect = value => {
+      this.showEditor();
+      if (value === 'delete') {
+        void this.deleteAgent(name);
+      }
+    };
+    picker.onCancel = () => this.showEditor();
+    this.showPanel(picker);
+  }
+
+  private async deleteAgent(name: string): Promise<void> {
+    const other: Scope = this.scope === 'global' ? 'local' : 'global';
+    await this.persist(`deleted agent ${name}`, file => withoutAgent(file, name));
+    if (this.state.files[other].agents?.[name]) {
+      this.addMessage(c.dim(`${this.displayPath(this.scopePath(other))} still defines ${name}.`));
+    } else if (name === 'default') {
+      this.addMessage(c.dim('default is the built-in agent again (auto: first provider with credentials).'));
+    }
+  }
+
   private settingItems(): SettingItem[] {
     const { loaded, runtime, files } = this.state;
     const { config } = loaded;
@@ -649,6 +958,36 @@ class CookTui {
           selector.onCancel = () => done();
           return selector;
         },
+      },
+      {
+        id: 'thinking',
+        label: 'Thinking',
+        currentValue: agent.thinking ?? 'default',
+        description: `How much the model reasons (agent "${runtime.agent_name}"): ${
+          agent.thinking
+            ? describeThinking(agent.provider, agent.model, agent.thinking) ?? 'not settable for this model'
+            : 'provider default'
+        }. ${agentWhere}`,
+        submenu: (_value, done) => {
+          const picker = this.createThinkingPicker(agent.provider, agent.model, 'Thinking level', agent.thinking);
+          picker.onSelect = value => {
+            done();
+            void this.setThinking(value);
+          };
+          picker.onCancel = () => done();
+          return picker;
+        },
+      },
+      {
+        id: 'fast',
+        label: 'Fast mode',
+        currentValue: String(Boolean(agent.fast)),
+        description: `${
+          FAST_MODE_NOTES[agent.provider]
+            ? `Use ${agent.provider}'s ${FAST_MODE_NOTES[agent.provider]}`
+            : `Only OpenAI and Anthropic have a fast mode; ${agent.provider} ignores it`
+        } (agent "${runtime.agent_name}"). ${agentWhere}`,
+        values: booleanValues,
       },
       {
         id: 'default_agent',
@@ -749,6 +1088,8 @@ class CookTui {
       this.persist(`${name}: ${summary}`, update);
 
     switch (id) {
+      case 'fast':
+        return this.setFast(value === 'true' ? 'on' : 'off');
       case 'raw_bash_output':
       case 'ignore_agents_md':
         return agentEdit(`${id} → ${value}`, file =>
@@ -881,6 +1222,7 @@ class CookTui {
         emit: message => this.addMessage(message),
       });
       this.state = await this.loadState();
+      this.modelCache.delete('openai-codex');
       this.addMessage(`${c.green('✓')} Signed in to OpenAI with ChatGPT.`);
     } catch (error) {
       this.addMessage(c.red(`✗ ${errorMessage(error)}`));
@@ -894,6 +1236,7 @@ class CookTui {
     try {
       const removed = await this.host.logoutOpenAICodex(this.homeDir);
       this.state = await this.loadState();
+      this.modelCache.delete('openai-codex');
       this.addMessage(removed ? `${c.green('✓')} Signed out of OpenAI.` : 'cook has no saved ChatGPT login.');
     } catch (error) {
       this.addMessage(c.red(`✗ ${errorMessage(error)}`));

@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import { CliError } from './errors.ts';
+import { THINKING_LEVELS, isThinkingLevel, type ThinkingLevel } from './provider-options.ts';
 import { COOK_VERSION } from './version.ts';
 
 export interface CliFlags {
@@ -13,6 +14,15 @@ export interface CliFlags {
   allowOutsideCwd?: boolean;
   dryRun?: boolean;
   raw?: boolean;
+  thinking?: ThinkingLevel;
+  fast?: boolean;
+}
+
+function parseThinkingLevel(value: string): ThinkingLevel {
+  if (!isThinkingLevel(value)) {
+    throw new CliError(`Unknown thinking level "${value}". Use one of: ${THINKING_LEVELS.join(', ')}.`);
+  }
+  return value;
 }
 
 export function parseCli(argv: string[]): { instruction: string; flags: CliFlags } {
@@ -38,6 +48,8 @@ export function parseCli(argv: string[]): { instruction: string; flags: CliFlags
     .option('--allow-outside-cwd', 'Allow file/tool operations outside current working directory')
     .option('--dry-run', 'Preview mutating actions but do not execute them')
     .option('--raw', 'Enable raw Bash terminal output mode (allows isFinal)')
+    .option('--thinking <level>', `Override the thinking level (${THINKING_LEVELS.join('|')})`, parseThinkingLevel)
+    .option('--fast', 'Use fast mode (OpenAI priority tier, Anthropic fast mode)')
     .addHelpText(
       'after',
       [

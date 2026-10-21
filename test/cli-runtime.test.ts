@@ -181,4 +181,14 @@ describe('createRuntimeConfig', () => {
     expect(runtime.agent.model).toBe('gpt-5.2');
     expect(runtime.agent.raw_bash_output).toBe(true);
   });
+
+  it('lets --thinking and --fast override the agent', () => {
+    const config = buildConfig(false);
+    config.agents.default = { provider: 'anthropic', model: 'claude-opus-5-5', thinking: 'low' };
+    expect(createRuntimeConfig(config, {}).agent).toMatchObject({ thinking: 'low', fast: false });
+    expect(createRuntimeConfig(config, { thinking: 'max', fast: true }).agent).toMatchObject({
+      thinking: 'max',
+      fast: true,
+    });
+  });
 });

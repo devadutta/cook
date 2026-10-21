@@ -1,3 +1,5 @@
+import type { ThinkingLevel } from './provider-options.ts';
+
 import type { ModelMessage } from '@ai-sdk/provider-utils';
 
 export interface BashMutationInput {
@@ -67,6 +69,8 @@ export interface AgentConfig {
   prompt_files?: AgentPromptFiles;
   ignore_agents_md?: boolean;
   raw_bash_output?: boolean;
+  thinking?: ThinkingLevel;
+  fast?: boolean;
 }
 
 export interface ResolvedAgentConfig extends AgentConfig {

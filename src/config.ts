@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { z } from 'zod';
 import { DEFAULT_CONFIG } from './defaults.ts';
+import { THINKING_LEVELS } from './provider-options.ts';
 import type { AgentConfig, CookConfig, LoadedConfig } from './types.ts';
 
 const provider_api_keys_schema = z.record(
@@ -31,6 +32,8 @@ const agent_schema = z.object({
   prompt_files: prompt_files_schema.optional(),
   ignore_agents_md: z.boolean().optional(),
   raw_bash_output: z.boolean().optional(),
+  thinking: z.enum(THINKING_LEVELS).optional(),
+  fast: z.boolean().optional(),
 }).strict();
 
 const full_config_schema = z.object({

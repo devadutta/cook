@@ -19,6 +19,7 @@ import type {
   PendingToolApproval,
   ToolRuntime,
 } from './types.ts';
+import { providerOptionsFor } from './provider-options.ts';
 import { buildSystemPrompt } from './system-prompt.ts';
 
 function formatLocalDateTimeContext(now = new Date()): string {
@@ -528,17 +529,10 @@ export async function runAgent(options: AgentRunOptions): Promise<AgentRunResult
     callStarted = true;
     callLogger.onCallStart();
 
+    const providerOptions = providerOptionsFor(options.runtime.agent);
     const generationOptions = {
       messages: inputMessages,
-      ...(options.runtime.agent.provider === 'openai-codex'
-        ? {
-            providerOptions: {
-              openai: {
-                store: false,
-              },
-            },
-          }
-        : {}),
+      ...(providerOptions ? { providerOptions } : {}),
     };
     let resultText: string;
     let resultContent: unknown[];

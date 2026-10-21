@@ -12,7 +12,12 @@ export type EditableOption =
   | 'debug'
   | 'session_logs';
 
-export type EditableAgentOption = 'raw_bash_output' | 'ignore_agents_md' | 'prompt_files';
+export type EditableAgentOption =
+  | 'raw_bash_output'
+  | 'ignore_agents_md'
+  | 'prompt_files'
+  | 'thinking'
+  | 'fast';
 
 export const GATEWAY_KEY_ENV = 'AI_GATEWAY_API_KEY';
 
@@ -27,6 +32,12 @@ function compactAgent(agent: AgentConfig): AgentConfig {
   }
   if (agent.ignore_agents_md) {
     compacted.ignore_agents_md = true;
+  }
+  if (agent.thinking) {
+    compacted.thinking = agent.thinking;
+  }
+  if (agent.fast) {
+    compacted.fast = true;
   }
   const promptFiles = compactPromptFiles(agent.prompt_files);
   if (promptFiles) {
@@ -90,6 +101,10 @@ export function withAgentOption<K extends EditableAgentOption>(
     }
     return next;
   });
+}
+
+export function withNewAgent(file: ConfigFile, agentName: string, agent: AgentConfig): ConfigFile {
+  return { ...file, agents: { ...file.agents, [agentName]: compactAgent(agent) } };
 }
 
 export function withoutAgent(file: ConfigFile, agentName: string): ConfigFile {
