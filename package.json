@@ -9,8 +9,8 @@
   },
   "scripts": {
     "dev": "bun run src/cli.ts",
-    "build": "mkdir -p dist && bun build src/cli.ts --target bun --outfile dist/cook.js",
-    "build:compile": "mkdir -p dist && bun build --compile --minify src/cli.ts --outfile dist/cook",
+    "build": "mkdir -p dist && bun build src/cli.ts --target bun --outfile dist/cook.js && bun build src/tui/app.ts --target bun --outfile dist/tui/app.js",
+    "build:compile": "mkdir -p dist && bun build --compile --minify src/cli.ts src/tui/app.ts --outfile dist/cook",
     "release": "bash scripts/release.sh",
     "share": "bun run scripts/build-session-viz.ts",
     "share:all": "bun run scripts/build-session-viz.ts all",
@@ -24,6 +24,7 @@
     "@ai-sdk/google": "^3.0.33",
     "@ai-sdk/groq": "^3.0.25",
     "@ai-sdk/openai": "^3.0.36",
+    "@mariozechner/pi-tui": "^0.73.1",
     "ai": "^6.0.100",
     "commander": "^14.0.3",
     "picocolors": "^1.1.1",

@@ -1,4 +1,4 @@
-import { mkdir } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { z } from 'zod';
@@ -56,7 +56,7 @@ const config_file_schema = z.object({
   ...full_config_schema.shape,
   verbose: z.boolean().optional(),
 }).partial().strict();
-type ConfigFile = z.infer<typeof config_file_schema>;
+export type ConfigFile = z.infer<typeof config_file_schema>;
 type ConfigWithLegacyVerbose = Partial<CookConfig> & { verbose?: boolean };
 
 interface LoadConfigOptions {
@@ -84,7 +84,20 @@ export function getSystemPromptPaths(cwd: string, homeDir = os.homedir()): {
   };
 }
 
-async function readConfigFile(filePath: string): Promise<ConfigFile> {
+function parseConfigFile(value: unknown, filePath: string): ConfigFile {
+  const result = config_file_schema.safeParse(value);
+
+  if (!result.success) {
+    const issues = result.error.issues
+      .map(issue => `${issue.path.join('.') || '<root>'}: ${issue.message}`)
+      .join(', ');
+    throw new Error(`Invalid config at ${filePath}: ${issues}`);
+  }
+
+  return result.data;
+}
+
+export async function readConfigFile(filePath: string): Promise<ConfigFile> {
   const file = Bun.file(filePath);
   if (!(await file.exists())) {
     return {};
@@ -95,17 +108,20 @@ async function readConfigFile(filePath: string): Promise<ConfigFile> {
     return {};
   }
 
-  const parsed = JSON.parse(text) as unknown;
-  const result = config_file_schema.safeParse(parsed);
+  return parseConfigFile(JSON.parse(text) as unknown, filePath);
+}
 
-  if (!result.success) {
-    const issues = result.error.issues
-      .map(issue => `${issue.path.join('.') || '<root>'}: ${issue.message}`)
-      .join(', ');
-    throw new Error(`Invalid config at ${filePath}: ${issues}`);
-  }
-
-  return result.data;
+export async function updateConfigFile(
+  filePath: string,
+  update: (current: ConfigFile) => ConfigFile,
+): Promise<ConfigFile> {
+  const current = await readConfigFile(filePath);
+  const next = parseConfigFile(update(structuredClone(current)), filePath);
+  await mkdir(path.dirname(filePath), { recursive: true });
+  // Config files can hold API keys; mode only applies when the file is created.
+  // (Bun.write ignores `mode`, so this uses node:fs.)
+  await writeFile(filePath, `${JSON.stringify(next, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
+  return next;
 }
 
 function stripUndefined<T extends object>(value: T): Partial<T> {

@@ -61,6 +61,7 @@ cook /create-pr
 - [Providers & Models](#providers--models)
 - [Safety](#safety)
 - [Configuration](#configuration)
+  - [Interactive Setup](#interactive-setup)
   - [Config Precedence](#config-precedence)
   - [Example Config](#example-config)
   - [System Prompt Composition](#system-prompt-composition)
@@ -280,6 +281,24 @@ cook --allow-outside-cwd "update ~/.bashrc"
 
 ## Configuration
 
+### Interactive Setup
+
+Run `cook` with no arguments to open an interactive setup screen. Type `/` to see commands:
+
+| Command | What it does |
+|---------|--------------|
+| `/model [provider] [id]` | Pick a provider, then a model from its live list (with context size and pricing for the Vercel AI Gateway). `/model groq` jumps straight to Groq's models |
+| `/agent [name]` | Switch the default agent, or create a new one from the current agent |
+| `/settings` | Steps, timeouts, confirmations, prompt files, and the other config options |
+| `/keys` | Save provider API keys to config (input is masked) |
+| `/scope [global\|local]` | Choose whether changes go to `~/.cook/config.json` (default) or `./.cook/config.json` |
+| `/config` | Show the merged config, with keys masked |
+| `/login`, `/logout` | Sign in or out with ChatGPT |
+
+Anything that isn't a command runs as a normal cook task, and so do your [command aliases](#command-aliases). The setup screen loads only when `cook` runs without arguments, so `cook <instruction>` starts as fast as before.
+
+Model lists for OpenAI, Anthropic, Google, and Groq need that provider's API key. Without one, type any model id.
+
 ### Config Precedence
 
 Flags → Local config → Global config → Defaults
@@ -391,6 +410,7 @@ This creates a `session.html` file you can open in any browser.
 ## CLI Reference
 
 ```
+cook                                   # interactive setup
 cook [options] <instruction>
 cook config init [--global] [--local] [--force]
 cook login [openai] [--device-code] [--no-browser]

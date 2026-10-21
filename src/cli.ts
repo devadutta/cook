@@ -8,10 +8,7 @@ import { loadConfig } from './config.ts';
 import { runConfigInitCommand } from './config-init.ts';
 import { runLoginCommand, runLogoutCommand } from './login.ts';
 import { hasOpenAICodexCredentials } from './openai-oauth.ts';
-import {
-  isBuiltInDefaultAgent,
-  resolvePortableDefaultProvider,
-} from './portable-default.ts';
+import { createRuntimeConfig } from './runtime-config.ts';
 import {
   canPromptForConfirmation,
   confirmPendingMutation,
@@ -30,13 +27,11 @@ import {
 import { logConfirmationDecision } from './session-log-events.ts';
 import { createSessionLogger, serializeSessionError } from './session-logger.ts';
 import { readStdinContext } from './stdin.ts';
-import type {
-  CookConfig,
-  ResolvedAgentConfig,
-  RuntimeConfig,
-  SessionLogger,
-} from './types.ts';
+import { tuiHost } from './tui/host.ts';
+import type { CookConfig, SessionLogger } from './types.ts';
 import type { CliFlags } from './cli-parse.ts';
+
+export { createRuntimeConfig };
 
 export function rewriteKnownErrorMessage(message: string): string {
   const isGatewayUnauthenticatedError =
@@ -67,94 +62,32 @@ function toConfigOverrides(flags: CliFlags): Partial<CookConfig> {
   };
 }
 
-function resolveAgentName(config: CookConfig, flags: CliFlags): string {
-  if (flags.agent) {
-    if (!(flags.agent in config.agents)) {
-      const available = Object.keys(config.agents).join(', ');
-      throw new CliError(`Unknown agent "${flags.agent}". Available agents: ${available}`);
-    }
-
-    return flags.agent;
-  }
-
-  if (config.default_agent) {
-    if (!(config.default_agent in config.agents)) {
-      throw new CliError(
-        `default_agent "${config.default_agent}" is not defined in agents.`,
-      );
-    }
-
-    return config.default_agent;
-  }
-
-  if ('default' in config.agents) {
-    return 'default';
-  }
-
-  throw new CliError(
-    'No agent selected. Set default_agent in config or pass --agent <name>.',
-  );
+export function shouldLaunchTui(
+  args: string[],
+  isInteractive: () => boolean = () => Boolean(process.stdin.isTTY && process.stdout.isTTY),
+): boolean {
+  // Check args first: touching process.stdin creates the stream, which costs
+  // startup time that `cook <instruction>` should not pay here.
+  return args.length === 0 && isInteractive();
 }
 
-function resolveRuntimeAgent(
-  config: CookConfig,
-  agentName: string,
-  flags: CliFlags,
-  availability: { openaiOAuth?: boolean },
-): ResolvedAgentConfig {
-  const baseAgent = config.agents[agentName];
-  if (!baseAgent) {
-    throw new CliError(`Resolved agent "${agentName}" is missing from configuration.`);
-  }
-
-  let resolvedAgent = baseAgent;
-  if (isBuiltInDefaultAgent(agentName, baseAgent)) {
-    const portableProvider = resolvePortableDefaultProvider(
-      config,
-      process.env,
-      availability,
-    );
-    if (portableProvider) {
-      resolvedAgent = {
-        ...baseAgent,
-        provider: portableProvider.provider,
-        model: portableProvider.model,
-      };
-    }
-  }
-
-  return {
-    ...resolvedAgent,
-    raw_bash_output: Boolean(flags.raw || resolvedAgent.raw_bash_output),
-  };
-}
-
-export function createRuntimeConfig(
-  config: CookConfig,
-  flags: CliFlags,
-  availability: { openaiOAuth?: boolean } = {},
-): RuntimeConfig {
-  const agent_name = resolveAgentName(config, flags);
-  const agent = resolveRuntimeAgent(config, agent_name, flags, availability);
-
-  const {
-    agents: _agents,
-    default_agent: _default_agent,
-    ...base
-  } = config;
-
-  return {
-    ...base,
-    agent_name,
-    agent,
-    cwd: process.cwd(),
-    always_execute: Boolean(flags.yes),
-    dry_run: Boolean(flags.dryRun),
-  };
+// import() through a parameter is resolved at runtime, so the bundler cannot
+// inline the target. Compiled builds embed src/tui/app.ts as a second
+// entrypoint instead (see package.json and scripts/release.sh), which keeps
+// `cook <instruction>` from loading or even parsing any TUI code.
+function importAtRuntime<T>(specifier: string): Promise<T> {
+  return import(specifier) as Promise<T>;
 }
 
 async function run(): Promise<number> {
   const rawArgs = process.argv.slice(2);
+  if (shouldLaunchTui(rawArgs)) {
+    const { runTui } = await importAtRuntime<typeof import('./tui/app.ts')>('./tui/app.js');
+    const instruction = await runTui({ cwd: process.cwd(), host: tuiHost });
+    return instruction
+      ? runInstruction(instruction, {}, [instruction])
+      : EXIT_CODES.SUCCESS;
+  }
   if (rawArgs[0] === 'config' && rawArgs[1] === 'init') {
     return runConfigInitCommand(rawArgs.slice(2));
   }
@@ -165,7 +98,15 @@ async function run(): Promise<number> {
     return runLogoutCommand(rawArgs.slice(1));
   }
 
-  const { instruction: parsedInstruction, flags } = parseCli(process.argv);
+  const { instruction, flags } = parseCli(process.argv);
+  return runInstruction(instruction, flags, rawArgs);
+}
+
+async function runInstruction(
+  parsedInstruction: string,
+  flags: CliFlags,
+  argv: string[],
+): Promise<number> {
   const resolvedInstruction = await resolveCommandInstruction({
     instruction: parsedInstruction,
     cwd: process.cwd(),
@@ -184,7 +125,7 @@ async function run(): Promise<number> {
   if (runtime.session_logs) {
     sessionLogger = await createSessionLogger({
       cwd: runtime.cwd,
-      argv: process.argv.slice(2),
+      argv,
       agent_name: runtime.agent_name,
       provider: runtime.agent.provider,
       model: runtime.agent.model,
