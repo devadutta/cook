@@ -56,6 +56,7 @@ cook /create-pr
   - [Piped Input](#piped-input)
   - [Command Aliases](#command-aliases)
   - [Agents](#agents)
+  - [Decision Agents](#decision-agents)
   - [Output Modes](#output-modes)
   - [Raw Terminal Mode](#raw-terminal-mode)
 - [Providers & Models](#providers--models)
@@ -165,6 +166,46 @@ cook --agent fast "what does main.ts export?"
 ```
 
 Agents are defined in your config file — see [Configuration](#configuration). In the [interactive setup](#interactive-setup), `/new-agent` creates one without changing your default, and `/delete-agent` removes one.
+
+### Decision Agents
+
+A decision agent skips the tool loop. It sends your input straight to a System 1 decision model, such as TypeSafe's Jev, and prints an answer for each question. A choice question gets the chosen option and its probability. A score question gets a score out of the top level, and a yes/no question gets the probability of yes. Decision agents run on the Vercel AI Gateway, so they need `AI_GATEWAY_API_KEY`.
+
+Give the agent its questions in config, then pass it the state to judge, as text or JSON, as an argument or on stdin:
+
+```json
+{
+  "agents": {
+    "triage": {
+      "type": "decision",
+      "provider": "gateway",
+      "model": "typesafe-ai/jev",
+      "questions": {
+        "team": { "type": "choice", "instructions": "Which team should handle this", "criteria": { "billing": "Invoices, refunds", "technical": "Bugs, outages" } },
+        "severity": { "type": "score", "instructions": "How severe the problem sounds", "criteria": ["Minor", "Moderate", "Critical"] },
+        "urgent": { "type": "boolean", "instructions": "The customer conveys urgency" }
+      }
+    }
+  }
+}
+```
+
+```bash
+cook --agent triage "Our nightly export failed three times and the board meets in an hour"
+# team: technical (1.00)
+# severity: 1.97/2
+# urgent: 0.99
+
+cat ticket.json | cook --agent triage --json   # model, answers with probabilities, and token usage
+```
+
+You can also send a whole request instead: a JSON object with `questions` (and optionally `state`) replaces the agent's questions. Images work as state too, if the model takes them. Pipe one in (PNG, JPEG, GIF, or WebP), or pass AI SDK `file` parts:
+
+```bash
+cook --agent triage '{"questions": {"damaged": {"type": "boolean", "instructions": "The package looks damaged"}}}' < photo.jpg
+```
+
+Questions follow the AI SDK's decision format: `choice` (with `criteria` naming the options), `score` (with `criteria` listing the levels, lowest first), and `boolean`. Every question needs `instructions`. `/new-agent` in the [interactive setup](#interactive-setup) can create a decision agent and lists the gateway's decision models.
 
 ### Output Modes
 
@@ -321,7 +362,7 @@ Run `cook` with no arguments to open an interactive setup screen. Type `/` to se
 | `/thinking [level]` | Set the thinking level for the current agent, with what it means for that provider |
 | `/fast [on\|off]` | Toggle fast mode for the current agent (OpenAI and Anthropic) |
 | `/agent [name]` | Switch the default agent, or create a new one from the current agent |
-| `/new-agent [name]` | Create an agent: pick its model, thinking level, and fast mode. Your default stays the same |
+| `/new-agent [name]` | Create an agent: pick its type (tools or [decision](#decision-agents)), model, thinking level, and fast mode. Your default stays the same |
 | `/delete-agent [name]` | Remove an agent from the config file you're saving to, after you confirm. The default agent can't be deleted until you pick another |
 | `/settings` | Model, thinking, fast mode, API keys, steps, timeouts, confirmations, prompt files, and the other config options |
 | `/keys` | Just the provider API keys (input is masked) |
@@ -397,6 +438,7 @@ cook config init --global --local --force
 
 | Option | Default | Description |
 |--------|---------|-------------|
+| `type` | `agent` | `decision` sends the input straight to a decision model — see [Decision Agents](#decision-agents) |
 | `provider` | auto | One of: `gateway`, `openai`, `openai-codex`, `anthropic`, `google`, `groq` |
 | `model` | auto | Model identifier for the provider |
 | `thinking` | provider default | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max` — see [Thinking & Fast Mode](#thinking--fast-mode) |
@@ -405,6 +447,7 @@ cook config init --global --local --force
 | `prompt_files.system` | — | Custom system prompt file |
 | `prompt_files.system_append` | — | Additional prompt files appended in order |
 | `ignore_agents_md` | `false` | Skip `AGENTS.md` and `CLAUDE.md` context files |
+| `questions` | — | Decision agents only: the questions to answer about each input |
 
 ### System Prompt Composition
 
@@ -469,6 +512,7 @@ cook /alias-name
 | `--raw` | Enable raw bash terminal output |
 | `--thinking <level>` | Override the agent's thinking level |
 | `--fast` | Use fast mode for this run |
+| `--json` | Decision agents: print the model, answers with probabilities, and usage as JSON |
 | `-V`, `--version` | Print version and exit |
 
 ---
@@ -516,7 +560,7 @@ bun run build:compile    # → dist/cook (standalone binary)
 bun install              # install dependencies
 bun test                 # run tests
 bun run typecheck        # type-check without emitting
-bun run build            # bundle → dist/cook.js (needs Bun runtime)
+bun run build            # bundle → dist/cook.js, dist/tui/app.js, dist/decision.js (needs Bun runtime)
 bun run build:compile    # compile → dist/cook (standalone binary)
 bun run release          # build all platform binaries → dist/release/
 ```

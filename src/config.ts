@@ -25,7 +25,45 @@ const prompt_files_schema = z.object({
   system_append: z.array(z.string().min(1)).optional(),
 }).strict();
 
+// Mirrors the AI SDK decision question types. The gateway also requires
+// instructions on every question, though the SDK lets providers waive them.
+const decision_text_schema = z.union(
+  [z.string(), z.record(z.string(), z.json()), z.array(z.json())],
+  { error: issue => (issue.input === undefined ? 'required' : 'expected text, a JSON object or a JSON array') },
+);
+
+const decision_question_schema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('choice'),
+    instructions: decision_text_schema,
+    criteria: z.record(z.string(), decision_text_schema.nullable()).refine(
+      value => Object.keys(value).length > 0,
+      { message: 'choice questions need at least one option' },
+    ),
+  }).strict(),
+  z.object({
+    type: z.literal('score'),
+    instructions: decision_text_schema,
+    criteria: z.array(decision_text_schema.nullable()).min(1),
+  }).strict(),
+  z.object({
+    type: z.literal('boolean'),
+    instructions: decision_text_schema,
+    criteria: z.object({
+      true: decision_text_schema.nullable().optional(),
+      false: decision_text_schema.nullable().optional(),
+    }).strict().optional(),
+  }).strict(),
+], { error: 'type must be choice, score or boolean' });
+
+export const decision_questions_schema = z.record(z.string().min(1), decision_question_schema).refine(
+  value => Object.keys(value).length > 0,
+  { message: 'at least one question is required' },
+);
+export type DecisionQuestions = z.infer<typeof decision_questions_schema>;
+
 const agent_schema = z.object({
+  type: z.enum(['agent', 'decision']).optional(),
   provider: provider_schema,
   model: z.string().min(1),
   structured_output: z.boolean().optional(),
@@ -34,7 +72,14 @@ const agent_schema = z.object({
   raw_bash_output: z.boolean().optional(),
   thinking: z.enum(THINKING_LEVELS).optional(),
   fast: z.boolean().optional(),
-}).strict();
+  questions: decision_questions_schema.optional(),
+}).strict().refine(
+  agent => agent.type !== 'decision' || agent.provider === 'gateway',
+  { message: 'decision agents run on the gateway provider', path: ['provider'] },
+).refine(
+  agent => agent.type === 'decision' || agent.questions === undefined,
+  { message: 'questions only apply to agents with "type": "decision"', path: ['questions'] },
+);
 
 const full_config_schema = z.object({
   max_steps: z.number().int().min(1).max(100),

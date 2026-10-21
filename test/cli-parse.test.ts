@@ -74,4 +74,10 @@ describe('parseCli', () => {
   it('rejects unknown thinking levels', () => {
     expect(() => parseCli(['bun', 'cook', '--thinking', 'huge', 'tidy'])).toThrow('Unknown thinking level "huge"');
   });
+
+  it('parses --json and allows no instruction for input on stdin', () => {
+    const parsed = parseCli(['bun', 'cook', '--agent', 'triage', '--json']);
+    expect(parsed.flags.json).toBe(true);
+    expect(parsed.instruction).toBe('');
+  });
 });

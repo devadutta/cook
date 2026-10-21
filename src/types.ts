@@ -1,3 +1,4 @@
+import type { DecisionQuestions } from './config.ts';
 import type { ThinkingLevel } from './provider-options.ts';
 
 import type { ModelMessage } from '@ai-sdk/provider-utils';
@@ -62,7 +63,11 @@ export interface AgentPromptFiles {
   system_append?: string[];
 }
 
+export type AgentType = 'agent' | 'decision';
+
 export interface AgentConfig {
+  /** "decision" sends the input straight to a decision model instead of running the tool loop. */
+  type?: AgentType;
   provider: AgentProvider;
   model: string;
   structured_output?: boolean;
@@ -71,6 +76,7 @@ export interface AgentConfig {
   raw_bash_output?: boolean;
   thinking?: ThinkingLevel;
   fast?: boolean;
+  questions?: DecisionQuestions;
 }
 
 export interface ResolvedAgentConfig extends AgentConfig {

@@ -1,5 +1,4 @@
 import { createInterface } from 'node:readline/promises';
-import { stdin, stderr } from 'node:process';
 import { createColors } from 'picocolors';
 import { truncateForPreview } from './policy.ts';
 import type { PendingToolApproval } from './types.ts';
@@ -15,7 +14,7 @@ export function canPromptForConfirmation(): boolean {
 }
 
 function getColors() {
-  return createColors(Boolean(stderr.isTTY));
+  return createColors(Boolean(process.stderr.isTTY));
 }
 
 export function parseConfirmationInput(answer: string): ConfirmationDecision {
@@ -78,7 +77,9 @@ export async function confirmPendingMutation(
   index: number,
   total: number,
 ): Promise<ConfirmationDecision> {
-  const rl = createInterface({ input: stdin, output: stderr });
+  // process.stdin is read here, not imported at the top: creating the stream
+  // at startup empties stdin redirected from a file (`cook "…" < file`).
+  const rl = createInterface({ input: process.stdin, output: process.stderr });
 
   try {
     const c = getColors();
@@ -88,11 +89,11 @@ export async function confirmPendingMutation(
     const summary = summarizePendingApproval(approval);
 
     if (total === 1) {
-      stderr.write(`\n${cookTag} Mutating action\n`);
+      process.stderr.write(`\n${cookTag} Mutating action\n`);
     } else {
-      stderr.write(`\n${cookTag} Mutating action ${index}/${total}\n`);
+      process.stderr.write(`\n${cookTag} Mutating action ${index}/${total}\n`);
     }
-    stderr.write(`${cookTag} ${toolTag} ${summary}\n`);
+    process.stderr.write(`${cookTag} ${toolTag} ${summary}\n`);
 
     const answer = await rl.question(
       `${cookTag} Proceed? ${decisionTag} or tell cook what to do: `,
