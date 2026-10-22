@@ -34,6 +34,7 @@ export interface DecisionRunOptions {
   json: boolean;
   logDebug: (message: string) => void;
   sessionLogger?: SessionLogger;
+  abortSignal?: AbortSignal;
   fetch?: typeof fetch;
   homeDir?: string;
 }
@@ -363,6 +364,7 @@ export async function runDecision(options: DecisionRunOptions): Promise<string> 
     model: gateway.decisionModel(runtime.agent.model),
     state: request.state,
     questions: request.questions,
+    abortSignal: options.abortSignal,
   }).catch((error: unknown) => {
     const message = describeDecisionError(error);
     throw message ? new Error(message, { cause: error }) : error;

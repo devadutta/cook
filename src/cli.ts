@@ -30,6 +30,7 @@ import { readStdinContext } from './stdin.ts';
 import { tuiHost } from './tui/host.ts';
 import type { CookConfig, SessionLogger } from './types.ts';
 import type { CliFlags } from './cli-parse.ts';
+import type { ModelMessage } from '@ai-sdk/provider-utils';
 
 export { createRuntimeConfig };
 
@@ -83,10 +84,8 @@ async function run(): Promise<number> {
   const rawArgs = process.argv.slice(2);
   if (shouldLaunchTui(rawArgs)) {
     const { runTui } = await importAtRuntime<typeof import('./tui/app.ts')>('./tui/app.js');
-    const instruction = await runTui({ cwd: process.cwd(), host: tuiHost });
-    return instruction
-      ? runInstruction(instruction, {}, [instruction])
-      : EXIT_CODES.SUCCESS;
+    await runTui({ cwd: process.cwd(), host: tuiHost, runTurn: runInteractiveTurn });
+    return EXIT_CODES.SUCCESS;
   }
   if (rawArgs[0] === 'config' && rawArgs[1] === 'init') {
     return runConfigInitCommand(rawArgs.slice(2));
@@ -99,14 +98,68 @@ async function run(): Promise<number> {
   }
 
   const { instruction, flags } = parseCli(process.argv);
-  return runInstruction(instruction, flags, rawArgs);
+  return (await runInstruction(instruction, flags, rawArgs)).exitCode;
+}
+
+/**
+ * Runs one message of an interactive session and returns the conversation to
+ * continue from. ctrl+c stops the message instead of quitting cook, and a
+ * message that fails or is stopped leaves the conversation as it was.
+ */
+async function runInteractiveTurn(
+  instruction: string,
+  history: ModelMessage[],
+): Promise<ModelMessage[]> {
+  const controller = new AbortController();
+  const interrupt = () => {
+    // A tool that ignores ctrl+c keeps the turn running; a second press quits.
+    if (controller.signal.aborted) {
+      process.exit(EXIT_CODES.INTERRUPTED);
+    }
+    controller.abort();
+  };
+  process.on('SIGINT', interrupt);
+
+  try {
+    const { messages } = await runInstruction(instruction, {}, [instruction], {
+      history,
+      abortSignal: controller.signal,
+    });
+    if (!controller.signal.aborted) {
+      return messages;
+    }
+  } catch (error) {
+    if (!controller.signal.aborted) {
+      const message = error instanceof Error ? error.message : String(error);
+      printStderr(`cook failed: ${rewriteKnownErrorMessage(message)}`);
+      return history;
+    }
+  } finally {
+    process.off('SIGINT', interrupt);
+  }
+
+  printStderr('\nInterrupted.'); // after the terminal's ^C
+  return history;
+}
+
+interface Turn {
+  history?: ModelMessage[];
+  abortSignal?: AbortSignal;
+}
+
+interface InstructionResult {
+  exitCode: number;
+  /** The conversation to continue from in the next interactive turn. */
+  messages: ModelMessage[];
 }
 
 async function runInstruction(
   parsedInstruction: string,
   flags: CliFlags,
   argv: string[],
-): Promise<number> {
+  turn: Turn = {},
+): Promise<InstructionResult> {
+  const history = turn.history ?? [];
   const resolvedInstruction = await resolveCommandInstruction({
     instruction: parsedInstruction,
     cwd: process.cwd(),
@@ -178,9 +231,10 @@ async function runInstruction(
         json: Boolean(flags.json),
         logDebug,
         sessionLogger,
+        abortSignal: turn.abortSignal,
       }));
       exitCode = EXIT_CODES.SUCCESS;
-      return exitCode;
+      return { exitCode, messages: history };
     }
 
     if (runtime.dry_run) {
@@ -206,7 +260,7 @@ async function runInstruction(
       }
 
       exitCode = EXIT_CODES.SUCCESS;
-      return exitCode;
+      return { exitCode, messages: history };
     }
 
     const confirmationRequired =
@@ -224,7 +278,9 @@ async function runInstruction(
             logDebug,
             logToolCommand,
             sessionLogger,
+            history,
             messages,
+            abortSignal: turn.abortSignal,
           }),
         confirmApproval: confirmPendingMutation,
         printStdout,
@@ -235,7 +291,7 @@ async function runInstruction(
         },
       });
       exitCode = flow.exitCode;
-      return exitCode;
+      return { exitCode, messages: flow.messages };
     }
 
     const result = await runAgent({
@@ -247,6 +303,8 @@ async function runInstruction(
       logDebug,
       logToolCommand,
       sessionLogger,
+      history,
+      abortSignal: turn.abortSignal,
     });
 
     if (result.text) {
@@ -254,7 +312,7 @@ async function runInstruction(
     }
 
     exitCode = EXIT_CODES.SUCCESS;
-    return exitCode;
+    return { exitCode, messages: result.messages };
   } catch (error) {
     runError = error instanceof Error ? error.message : String(error);
     sessionLogger?.logEvent('session.error', {

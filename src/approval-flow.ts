@@ -111,6 +111,25 @@ function buildGuidanceContinuationMessage(
 export interface ApprovalFlowResult {
   exitCode: number;
   mutationPlan: MutationRecord[];
+  /** The conversation to continue from in the next turn. */
+  messages: ModelMessage[];
+}
+
+// A later turn sends this conversation again, and providers reject tool calls
+// that have no result, so actions that never ran are answered as denied.
+function withPendingDenied(run: AgentRunResult): ModelMessage[] {
+  return [
+    ...run.messages,
+    {
+      role: 'tool',
+      content: run.pendingApprovals.map(approval => ({
+        type: 'tool-result',
+        toolCallId: approval.toolCallId,
+        toolName: approval.toolName,
+        output: { type: 'execution-denied', reason: 'The user stopped this action.' },
+      })),
+    },
+  ];
 }
 
 export async function runApprovalFlow(
@@ -136,6 +155,7 @@ export async function runApprovalFlow(
       return {
         exitCode: EXIT_CODES.SUCCESS,
         mutationPlan,
+        messages: run.messages,
       };
     }
 
@@ -146,6 +166,7 @@ export async function runApprovalFlow(
       return {
         exitCode: EXIT_CODES.NON_TTY_CONFIRMATION_REQUIRED,
         mutationPlan,
+        messages: withPendingDenied(run),
       };
     }
 
@@ -174,6 +195,7 @@ export async function runApprovalFlow(
         return {
           exitCode: EXIT_CODES.DECLINED,
           mutationPlan,
+          messages: withPendingDenied(run),
         };
       }
 

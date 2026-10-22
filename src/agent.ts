@@ -207,17 +207,14 @@ function extractPendingApprovals(parts: unknown[]): PendingToolApproval[] {
 function buildInputMessages(
   prompt: string,
   continuationMessages: ModelMessage[] | undefined,
+  history: ModelMessage[] = [],
 ): ModelMessage[] {
   const initialUserMessage: ModelMessage = {
     role: 'user',
     content: prompt,
   };
 
-  if (!continuationMessages || continuationMessages.length === 0) {
-    return [initialUserMessage];
-  }
-
-  return [initialUserMessage, ...continuationMessages];
+  return [...history, initialUserMessage, ...(continuationMessages ?? [])];
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -291,7 +288,7 @@ export function mapExecuteResult(
   pendingApprovals: PendingToolApproval[],
   responseMessages: ModelMessage[],
   terminal?: AgentRunResult['terminal'],
-): AgentRunResult {
+): Omit<AgentRunResult, 'messages'> {
   return {
     text: text.trim(),
     mutationPlan,
@@ -473,7 +470,7 @@ export async function runAgent(options: AgentRunOptions): Promise<AgentRunResult
     : baseInstructions;
   const prompt = buildPrompt(options);
   const continuationMessageCount = options.messages?.length ?? 0;
-  const inputMessages = buildInputMessages(prompt, options.messages);
+  const inputMessages = buildInputMessages(prompt, options.messages, options.history);
   const runId = randomUUID();
   const startedAt = Date.now();
   const callId = randomUUID();
@@ -532,6 +529,7 @@ export async function runAgent(options: AgentRunOptions): Promise<AgentRunResult
     const providerOptions = providerOptionsFor(options.runtime.agent);
     const generationOptions = {
       messages: inputMessages,
+      abortSignal: options.abortSignal,
       ...(providerOptions ? { providerOptions } : {}),
     };
     let resultText: string;
@@ -569,13 +567,16 @@ export async function runAgent(options: AgentRunOptions): Promise<AgentRunResult
 
     const terminalBashAnswer = extractTerminalBashAnswer(resultToolResults);
 
-    const finalResult = mapExecuteResult(
-      runtime.mutation_plan,
-      terminalBashAnswer?.text ?? resultText,
-      extractPendingApprovals(resultContent),
-      responseMessages,
-      terminalBashAnswer?.terminal,
-    );
+    const finalResult: AgentRunResult = {
+      ...mapExecuteResult(
+        runtime.mutation_plan,
+        terminalBashAnswer?.text ?? resultText,
+        extractPendingApprovals(resultContent),
+        responseMessages,
+        terminalBashAnswer?.terminal,
+      ),
+      messages: [...inputMessages, ...responseMessages],
+    };
     callLogger.onCallFinish({
       success: true,
       durationMs: Math.max(0, Date.now() - callStartedAt),

@@ -183,7 +183,11 @@ export interface AgentRunOptions {
   logDebug: (message: string) => void;
   logToolCommand: (toolName: string, command: string) => void;
   sessionLogger?: SessionLogger;
+  /** Earlier turns of an interactive session, sent before this task. */
+  history?: ModelMessage[];
+  /** Messages after this task: approval responses and corrections. */
   messages?: ModelMessage[];
+  abortSignal?: AbortSignal;
 }
 
 export interface AgentRunResult {
@@ -191,6 +195,8 @@ export interface AgentRunResult {
   mutationPlan: MutationRecord[];
   pendingApprovals: PendingToolApproval[];
   responseMessages: ModelMessage[];
+  /** The whole conversation: history, this task, and every message after it. */
+  messages: ModelMessage[];
   terminal?: {
     source: 'bash';
     command: string;
