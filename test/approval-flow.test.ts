@@ -25,6 +25,7 @@ function runResult(
     mutationPlan: partial.mutationPlan ?? [],
     pendingApprovals: partial.pendingApprovals ?? [],
     responseMessages: partial.responseMessages ?? [],
+    messages: partial.messages ?? [],
     ...(partial.terminal ? { terminal: partial.terminal } : {}),
   };
 }

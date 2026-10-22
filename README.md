@@ -64,7 +64,7 @@ cook /create-pr
   - [Thinking & Fast Mode](#thinking--fast-mode)
 - [Safety](#safety)
 - [Configuration](#configuration)
-  - [Interactive Setup](#interactive-setup)
+  - [Interactive Mode](#interactive-mode)
   - [Config Precedence](#config-precedence)
   - [Example Config](#example-config)
   - [System Prompt Composition](#system-prompt-composition)
@@ -165,7 +165,7 @@ cook "summarize this repo"
 cook --agent fast "what does main.ts export?"
 ```
 
-Agents are defined in your config file — see [Configuration](#configuration). In the [interactive setup](#interactive-setup), `/new-agent` creates one without changing your default, and `/delete-agent` removes one.
+Agents are defined in your config file — see [Configuration](#configuration). In [interactive mode](#interactive-mode), `/new-agent` creates one without changing your default, and `/delete-agent` removes one.
 
 ### Decision Agents
 
@@ -215,7 +215,7 @@ The state can be text, JSON, or an image, if the model takes images. Pipe in a P
 cook --agent decide @damage < photo.jpg
 ```
 
-Questions follow the AI SDK's decision format: `choice` (with `criteria` naming the options), `score` (with `criteria` listing the levels, lowest first), and `boolean`. Every question needs `instructions`. An agent can also carry fixed `questions` in its config; a question file or a request replaces them for that run. `/new-agent` in the [interactive setup](#interactive-setup) can create a decision agent and lists the gateway's decision models.
+Questions follow the AI SDK's decision format: `choice` (with `criteria` naming the options), `score` (with `criteria` listing the levels, lowest first), and `boolean`. Every question needs `instructions`. An agent can also carry fixed `questions` in its config; a question file or a request replaces them for that run. `/new-agent` in [interactive mode](#interactive-mode) can create a decision agent and lists the gateway's decision models.
 
 ### Output Modes
 
@@ -362,9 +362,9 @@ cook --allow-outside-cwd "update ~/.bashrc"
 
 ## Configuration
 
-### Interactive Setup
+### Interactive Mode
 
-Run `cook` with no arguments to open an interactive setup screen. Type `/` to see commands:
+Run `cook` with no arguments to open an interactive session. Type `/` to see commands:
 
 | Command | What it does |
 |---------|--------------|
@@ -379,8 +379,11 @@ Run `cook` with no arguments to open an interactive setup screen. Type `/` to se
 | `/scope [global\|local]` | Choose whether changes go to `~/.cook/config.json` (default) or `./.cook/config.json` |
 | `/config` | Show the merged config, with keys masked |
 | `/login`, `/logout` | Sign in or out with ChatGPT |
+| `/clear` | Start a new conversation |
 
-Anything that isn't a command runs as a normal cook task, and so do your [command aliases](#command-aliases). The setup screen loads only when `cook` runs without arguments, so `cook <instruction>` starts as fast as before.
+Anything that isn't a command runs as a normal cook task, and so do your [command aliases](#command-aliases). When the task finishes you're back at the prompt, and your next message continues the conversation: cook sees the earlier tasks, its answers, and the tools it ran. Changes you make with `/model` or `/agent` between messages apply to the next one. `ctrl+c` stops a running task without leaving cook, and the task is left out of the conversation. On an empty prompt, `ctrl+c` or `/quit` exits. [Decision agents](#decision-agents) answer each message on its own.
+
+The interactive session loads only when `cook` runs without arguments, so `cook <instruction>` starts as fast as before.
 
 Model lists for OpenAI, Anthropic, Google, and Groq need that provider's API key, and the ChatGPT list needs `/login`. Without them, type any model id.
 
@@ -499,7 +502,7 @@ This creates a `session.html` file you can open in any browser.
 ## CLI Reference
 
 ```
-cook                                   # interactive setup
+cook                                   # interactive session
 cook [options] <instruction>
 cook config init [--global] [--local] [--force]
 cook login [openai] [--device-code] [--no-browser]

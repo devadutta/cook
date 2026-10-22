@@ -16,6 +16,7 @@ import {
   type SettingItem,
   type SlashCommand,
 } from '@mariozechner/pi-tui';
+import type { ModelMessage } from '@ai-sdk/provider-utils';
 import { unlink } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -78,6 +79,8 @@ interface ConfigState {
 export interface RunTuiOptions {
   cwd: string;
   host: TuiHost;
+  /** Runs one message with the conversation so far and returns the new conversation. */
+  runTurn: (instruction: string, history: ModelMessage[]) => Promise<ModelMessage[]>;
   homeDir?: string;
 }
 
@@ -94,6 +97,7 @@ const BUILT_IN_COMMANDS: Array<{ name: string; usage: string; description: strin
   { name: 'config', usage: '/config', description: 'show the effective config' },
   { name: 'login', usage: '/login [device]', description: 'sign in with ChatGPT' },
   { name: 'logout', usage: '/logout', description: 'remove the saved ChatGPT login' },
+  { name: 'clear', usage: '/clear', description: 'start a new conversation' },
   { name: 'help', usage: '/help', description: 'show commands and keys' },
   { name: 'quit', usage: '/quit', description: 'exit cook' },
 ];
@@ -130,16 +134,21 @@ function completeFrom(values: string[], prefix: string): AutocompleteItem[] | nu
   return matches.length > 0 ? matches : null;
 }
 
-export async function runTui(options: RunTuiOptions): Promise<string | undefined> {
+export async function runTui(options: RunTuiOptions): Promise<void> {
   return new CookTui(options).run();
 }
 
 class CookTui {
-  private readonly tui = new TUI(new ProcessTerminal());
+  // A fresh TUI for every prompt: pi-tui redraws relative to what it last
+  // drew, and a task's output lands below that in between prompts.
+  private tui!: TUI;
+  private editor!: Editor;
+  private readonly inputHistory: string[] = [];
+  private conversation: ModelMessage[] = [];
+  private turns = 0;
   private readonly log = new Container();
   private readonly panel = new Container();
   private readonly footer = new Container();
-  private readonly editor = new Editor(this.tui, editorTheme, { paddingX: 1 });
   private readonly modelCache = new Map<AgentProvider, Promise<ModelOption[]>>();
   private decisionModels?: Promise<ModelOption[]>;
   private readonly homeDir: string;
@@ -155,28 +164,48 @@ class CookTui {
   constructor(private readonly options: RunTuiOptions) {
     this.homeDir = options.homeDir ?? os.homedir();
     this.host = options.host;
-    this.editor.onSubmit = text => this.handleSubmit(text);
   }
 
-  async run(): Promise<string | undefined> {
+  async run(): Promise<void> {
     [this.state, this.aliases] = await Promise.all([
       this.loadState(),
       this.host.listCommandAliases(this.options.cwd, this.homeDir),
     ]);
+
+    let instruction = await this.prompt();
+    while (instruction) {
+      this.conversation = await this.options.runTurn(instruction, this.conversation);
+      this.turns += 1;
+      instruction = await this.prompt();
+    }
+  }
+
+  /** Shows the editor until the user submits a task (returned) or quits. */
+  private async prompt(): Promise<string | undefined> {
+    this.tui = new TUI(new ProcessTerminal());
+    this.editor = new Editor(this.tui, editorTheme, { paddingX: 1 });
+    this.editor.onSubmit = text => this.handleSubmit(text);
     this.editor.setAutocompleteProvider(
       new CombinedAutocompleteProvider(this.slashCommands(), this.options.cwd),
     );
+    for (const input of this.inputHistory) {
+      this.editor.addToHistory(input);
+    }
 
-    this.tui.addChild(new Text(
-      `${c.bold('cook')} ${c.dim(`v${COOK_VERSION}`)}\n${c.dim('Set up cook with / commands, or type a task and press enter to run it.')}`,
-      1,
-      1,
-    ));
+    // Earlier messages are already in the scrollback above.
+    this.log.clear();
+    if (this.turns === 0) {
+      this.tui.addChild(new Text(
+        `${c.bold('cook')} ${c.dim(`v${COOK_VERSION}`)}\n${c.dim('Set up cook with / commands, or type a task and press enter to run it.')}`,
+        1,
+        1,
+      ));
+      this.addMessage(this.summary());
+    }
     this.tui.addChild(this.log);
     this.tui.addChild(this.panel);
     this.tui.addChild(this.footer);
     this.tui.addInputListener(data => this.handleGlobalKey(data));
-    this.addMessage(this.summary());
     this.showEditor();
 
     const done = new Promise<string | undefined>(resolve => {
@@ -184,6 +213,7 @@ class CookTui {
     });
     this.tui.start();
     const instruction = await done;
+    await this.pendingWrite; // the task should run with the config just saved
 
     // Collapse the editor so the task output starts right below the log.
     this.panel.clear();
@@ -340,7 +370,8 @@ class CookTui {
   // ── layout ───────────────────────────────────────────────────────────
 
   private addMessage(text: string): void {
-    if (this.log.children.length > 0) {
+    // After a task, the first message also needs space from the answer above.
+    if (this.log.children.length > 0 || this.turns > 0) {
       this.log.addChild(new Spacer(1));
     }
     this.log.addChild(new Text(text, 1, 0));
@@ -501,6 +532,7 @@ class CookTui {
       return;
     }
     this.editor.addToHistory(input);
+    this.inputHistory.push(input);
 
     if (!input.startsWith('/')) {
       this.finish(input);
@@ -553,6 +585,9 @@ class CookTui {
         return;
       case 'logout':
         void this.logout();
+        return;
+      case 'clear':
+        this.clearConversation();
         return;
       case 'help':
         this.showHelp();
@@ -1306,6 +1341,11 @@ class CookTui {
     ].join('\n'));
   }
 
+  private clearConversation(): void {
+    this.conversation = [];
+    this.addMessage(c.dim('Started a new conversation.'));
+  }
+
   private showHelp(): void {
     const width = Math.max(...BUILT_IN_COMMANDS.map(command => command.usage.length)) + 2;
     const lines = BUILT_IN_COMMANDS.map(command =>
@@ -1316,7 +1356,8 @@ class CookTui {
     }
     lines.push(
       '',
-      c.dim('Anything else runs as a cook task. Tab completes, ↑↓ browse history, ctrl+c clears or quits.'),
+      c.dim('Anything else runs as a cook task, and the next message continues the conversation.'),
+      c.dim('Tab completes, ↑↓ browse history, ctrl+c clears or quits, or stops a running task.'),
     );
     this.addMessage(lines.join('\n'));
   }

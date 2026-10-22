@@ -95,10 +95,23 @@ export async function confirmPendingMutation(
     }
     process.stderr.write(`${cookTag} ${toolTag} ${summary}\n`);
 
-    const answer = await rl.question(
-      `${cookTag} Proceed? ${decisionTag} or tell cook what to do: `,
-    );
-    return parseConfirmationInput(answer);
+    // ctrl+c reaches readline as a key, not a signal; without a listener
+    // readline closes and the question never settles.
+    const interrupted = new AbortController();
+    rl.once('SIGINT', () => interrupted.abort());
+    try {
+      const answer = await rl.question(
+        `${cookTag} Proceed? ${decisionTag} or tell cook what to do: `,
+        { signal: interrupted.signal },
+      );
+      return parseConfirmationInput(answer);
+    } catch (error) {
+      if (!interrupted.signal.aborted) {
+        throw error;
+      }
+      process.stderr.write('\n');
+      return { kind: 'decline' };
+    }
   } finally {
     rl.close();
   }
